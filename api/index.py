@@ -218,7 +218,7 @@ async def analyze(
                     ocr_products.extend(prods)
                 elif mode == "ocr":
                     if not OCR_AVAILABLE:
-                        ocr_errors.append("OCR simples não disponível. Instale: pip install easyocr")
+                        ocr_errors.append("OCR simples não disponível. Instale: pip install rapidocr-onnxruntime")
                         continue
                     try:
                         prods = extract_products_ocr(img_bytes)
