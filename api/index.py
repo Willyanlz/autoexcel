@@ -137,6 +137,7 @@ Não adicione markdown (como ```json) ou qualquer outro texto. Apenas o array JS
         response = await client.chat.completions.create(
             model=model or LLM_MODEL,
             max_tokens=8000,
+            timeout=7.0,  # 7-second limit to avoid Vercel 10s timeout
             messages=[
                 {
                     "role": "user",
