@@ -145,27 +145,14 @@ def extract_products_ocr(image_bytes: bytes):
         if 'sub-total' in line.lower() or 'sub total' in line.lower():
             continue
 
-        # Remove sequential number and system code if they exist at the start
-        # e.g., "1 MAC518009A PISO VANCOUVER..." -> "PISO VANCOUVER..."
-        cleaned_line = re.sub(r'^\s*\d+\s+[A-Z0-9]{5,15}\s+', '', line).strip()
+        # Remove sequential number at the start
+        # e.g., "1 MAC518009A PISO VANCOUVER..." -> "MAC518009A PISO VANCOUVER..."
+        cleaned_line = re.sub(r'^\s*\d+\s+', '', line).strip()
         
-        # If it didn't match the \d+, maybe it's just "MAC518009A PISO..."
-        if cleaned_line == line.strip():
-             cleaned_line = re.sub(r'^[A-Z0-9]{5,15}\s+', '', cleaned_line).strip()
-
         if len(cleaned_line) > 5 and 'tamanho' not in cleaned_line.lower() and 'sub-total' not in cleaned_line.lower():
-            produto = cleaned_line
-            # Apply the same rules as the AI
-            if produto.upper().startswith("PISO ESML."):
-                codigo = produto[len("PISO ESML."):].strip()
-            elif produto.upper().startswith("PISO HD"):
-                codigo = produto[len("PISO HD"):].strip()
-            else:
-                codigo = produto
-                
             products.append({
                 "tamanho": current_size or "DESCONHECIDO",
-                "codigo": codigo
+                "codigo": cleaned_line
             })
 
     return products
@@ -190,24 +177,20 @@ async def extract_from_image_via_ai(image_bytes: bytes, mime_type: str, api_key:
 Extraia as informações da imagem de produtos. A imagem contém blocos separados por 'Tamanho' (ex: Tamanho: 32,00 x 58,00).
 Sob cada tamanho, há uma lista de produtos.
 
-Preciso que você extraia a identificação final de cada produto (código ou nome), seguindo EXATAMENTE este padrão de conversão baseado no formato das linhas:
-- Se for "1 I60112A PISO ESML. 60112", extraia apenas "60112"
-- Se for "2 IN1531 PISO ESML. 60072", extraia apenas "60072"
-- Se for "3 I60141A PISO HD 60141", extraia apenas "60141"
-- Se for "1 MAC518009A PISO VANCOUVER MAC 518.009", extraia o nome todo "PISO VANCOUVER MAC 518.009"
-- Se for "1 MRT250008A PISO ESML. RT 250.008", extraia apenas "RT 250.008"
+Preciso que você extraia a identificação de cada produto (código e nome), seguindo EXATAMENTE este padrão de conversão:
+- Se for "1 I60112A PISO ESML. 60112", extraia "I60112A PISO ESML. 60112"
+- Se for "2 IN1531 PISO ESML. 60072", extraia "IN1531 PISO ESML. 60072"
+- Se for "1 MAC518009A PISO VANCOUVER MAC 518.009", extraia "MAC518009A PISO VANCOUVER MAC 518.009"
+- Se for "1 MRT250008A PISO ESML. RT 250.008", extraia "MRT250008A PISO ESML. RT 250.008"
 
 Regras gerais:
-1. Ignore o número sequencial no início da linha (ex: 1, 2, 3).
-2. Ignore o código interno colado de sistema que vem logo depois (ex: I60112A, MAC518009A).
-3. Pegue a descrição/nome do produto que vem a seguir. 
-4. SE a descrição começar com "PISO ESML." ou "PISO HD", remova essa parte e extraia apenas o que sobrar (ex: "60112", "RT 250.008", "160.088").
-5. SE a descrição NÃO começar com esses prefixos, extraia a descrição INTEIRA (ex: "PISO VANCOUVER MAC 518.009").
+1. Ignore apenas o número sequencial no início da linha (ex: 1, 2, 3) e o espaço logo após.
+2. Extraia e mantenha todo o restante da linha (o código de sistema e a descrição completa).
 
 Retorne EXATAMENTE UM JSON ARRAY com este formato:
 [
-  {"tamanho": "32,00 x 58,00", "codigo": "60112"},
-  {"tamanho": "18,00 x 113,00 RT", "codigo": "PISO VANCOUVER MAC 518.009"}
+  {"tamanho": "32,00 x 58,00", "codigo": "I60112A PISO ESML. 60112"},
+  {"tamanho": "18,00 x 113,00 RT", "codigo": "MAC518009A PISO VANCOUVER MAC 518.009"}
 ]
 Não adicione markdown (como ```json). Apenas o array JSON puro.
 """
