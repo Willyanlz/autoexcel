@@ -38,14 +38,20 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 CURRENCY_FMT = 'R$ #.##0,00'
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS image_cache (hash TEXT PRIMARY KEY, json_data TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS manual_mapping (codigo TEXT PRIMARY KEY, price REAL, m2 REAL)''')
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS image_cache (hash TEXT PRIMARY KEY, json_data TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS manual_mapping (codigo TEXT PRIMARY KEY, price REAL, m2 REAL)''')
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Warning: Could not initialize database: {e}")
 
-init_db()
+try:
+    init_db()
+except Exception as e:
+    print(f"Warning: init_db failed at module level: {e}")
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -225,6 +231,7 @@ async def process_files(
     api_key: str = Form(""),
     llm_model: str = Form("")
 ):
+  try:
     pdf_bytes = await pdf.read()
     candidates_by_dim = parse_pdf(pdf_bytes)
 
@@ -304,7 +311,79 @@ async def process_files(
         
     ws = wb.active
 
-    # ---- Iterate rows and fill data ----
+    # ---- Build image products index by normalized dimension ----
+    image_products_by_dim = {}
+    for p in all_products:
+        tamanho = str(p.get("tamanho", ""))
+        dim_match = re.search(r'(\d+)(?:[,.](?:\d+))?\s*[xX×]\s*(\d+)(?:[,.](?:\d+))?', tamanho)
+        if dim_match:
+            dim_key = f"{int(dim_match.group(1))}x{int(dim_match.group(2))}"
+            image_products_by_dim.setdefault(dim_key, []).append(p)
+    
+    # Deduplicate products by codigo within each dimension
+    for dk in image_products_by_dim:
+        seen = set()
+        unique = []
+        for p in image_products_by_dim[dk]:
+            code = p.get("codigo", "")
+            if code and code not in seen:
+                seen.add(code)
+                unique.append(p)
+        image_products_by_dim[dk] = unique
+
+    # ---- Phase A: Insert image products into empty FORMATO sections ----
+    # 1. Find all FORMATO header rows and their dimensions
+    formato_rows = []
+    for r in range(1, ws.max_row + 1):
+        val = str(ws.cell(row=r, column=1).value or "").strip().upper()
+        dim = extract_dim_from_header(val)
+        if dim is not None:
+            formato_rows.append((r, dim))
+
+    # 2. Check which sections are empty (no product codes between headers)
+    sections_to_fill = []
+    for i, (hrow, dim) in enumerate(formato_rows):
+        next_hrow = formato_rows[i + 1][0] if i + 1 < len(formato_rows) else ws.max_row + 1
+        has_codes = False
+        for r in range(hrow + 1, min(next_hrow, hrow + 50)):  # limit lookahead
+            cv = str(ws.cell(row=r, column=1).value or "").strip()
+            nc = re.sub(r'\D', '', cv)
+            if nc and len(nc) >= 4:
+                has_codes = True
+                break
+        if not has_codes and dim in image_products_by_dim:
+            sections_to_fill.append((hrow, dim))
+
+    # 3. Insert products bottom-to-top to preserve row indices
+    for hrow, dim in reversed(sections_to_fill):
+        prods = image_products_by_dim[dim]
+        insert_at = hrow + 1
+        count = len(prods)
+        if count == 0:
+            continue
+
+        # Read physical properties from the first row after header (template row)
+        phys = {}
+        for col in range(3, min(ws.max_column + 1, 20)):
+            v = ws.cell(row=insert_at, column=col).value
+            if v is not None:
+                phys[col] = v
+
+        # First product reuses the existing row; insert additional rows below it
+        if count > 1:
+            ws.insert_rows(insert_at + 1, count - 1)
+
+        # Write product codes into the rows
+        for idx, prod in enumerate(prods):
+            r = insert_at + idx
+            code = prod.get("codigo", "")
+            ws.cell(row=r, column=1, value=code)
+            # Copy physical properties to newly inserted rows
+            if idx > 0:
+                for col, v in phys.items():
+                    ws.cell(row=r, column=col, value=v)
+
+    # ---- Iterate rows and fill data (prices from PDF) ----
     current_dim = None
     current_opts = []
     total_codes_found = 0
@@ -416,6 +495,16 @@ async def process_files(
         "warnings": warnings,
         "excel_base64": b64_excel
     })
+  except HTTPException:
+      raise
+  except Exception as e:
+      import traceback
+      error_detail = traceback.format_exc()
+      print(f"Process endpoint error: {error_detail}")
+      return JSONResponse(
+          status_code=500,
+          content={"success": False, "error": f"Erro interno: {str(e)}", "detail": error_detail}
+      )
 
 
 # ---------------------------------------------------------------------------
@@ -464,7 +553,13 @@ async def resolve_ambiguities(req: ResolveRequest):
     )
 
 # ---------------------------------------------------------------------------
-# Static frontend
+# Static frontend (only mount when running locally, Vercel handles static via routes)
 # ---------------------------------------------------------------------------
-public_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "public")
-app.mount("/", StaticFiles(directory=public_path, html=True), name="public")
+try:
+    public_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "public")
+    if os.path.isdir(public_path):
+        app.mount("/", StaticFiles(directory=public_path, html=True), name="public")
+    else:
+        print(f"Warning: public directory not found at {public_path}, skipping StaticFiles mount")
+except Exception as e:
+    print(f"Warning: Could not mount static files: {e}")

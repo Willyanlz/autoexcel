@@ -133,8 +133,18 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!response.ok) {
-                const errText = await response.text();
-                throw new Error('Erro na API: ' + errText);
+                let errDetail = '';
+                try {
+                    const errJson = await response.json();
+                    errDetail = errJson.error || errJson.detail || JSON.stringify(errJson);
+                } catch {
+                    errDetail = await response.text();
+                    // Strip HTML if Vercel returned a generic error page
+                    if (errDetail.includes('<html') || errDetail.includes('<!DOCTYPE')) {
+                        errDetail = `Erro do servidor (${response.status}). Possível timeout — tente com menos imagens ou arquivos menores.`;
+                    }
+                }
+                throw new Error('Erro na API: ' + errDetail);
             }
 
             const data = await response.json();
