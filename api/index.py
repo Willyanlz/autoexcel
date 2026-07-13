@@ -12,18 +12,18 @@ from typing import List, Optional
 import openpyxl
 from copy import copy
 
-# Lazy-load heavy OCR lib
-_ocr_reader = None
-def get_ocr_reader():
-    global _ocr_reader
-    if _ocr_reader is None:
-        import easyocr
-        _ocr_reader = easyocr.Reader(['pt', 'en'], gpu=False)
-    return _ocr_reader
+# Lazy-load lightweight OCR lib (rapidocr – ONNX-based, ~100MB vs PyTorch ~2GB)
+_ocr_engine = None
+def get_ocr_engine():
+    global _ocr_engine
+    if _ocr_engine is None:
+        from rapidocr_onnxruntime import RapidOCR
+        _ocr_engine = RapidOCR()
+    return _ocr_engine
 
 OCR_AVAILABLE = False
 try:
-    import easyocr as _easyocr_check
+    from rapidocr_onnxruntime import RapidOCR as _rocr_check
     OCR_AVAILABLE = True
 except ImportError:
     pass
@@ -80,12 +80,16 @@ def scan_excel_formats(ws):
 # ---------------------------------------------------------------------------
 
 def extract_products_ocr(image_bytes: bytes):
-    """Use easyocr to read text, then parse product codes grouped by size."""
-    reader = get_ocr_reader()
-    results = reader.readtext(image_bytes, detail=0)
+    """Use rapidocr (ONNX) to read text, then parse product codes grouped by size."""
+    engine = get_ocr_engine()
+    result, _ = engine(image_bytes)
 
-    # Join all detected text lines
-    full_text = "\n".join(results)
+    # rapidocr returns list of [box, text, score] or None
+    if not result:
+        return []
+
+    lines = [item[1] for item in result]
+    full_text = "\n".join(lines)
     lines = full_text.split("\n")
 
     products = []
@@ -103,7 +107,7 @@ def extract_products_ocr(image_bytes: bytes):
         )
         if size_match and ('tamanho' in line.lower() or len(line) < 40):
             d1, d2 = size_match.group(1), size_match.group(2)
-            current_size = f"{d1},{('00')} x {d2},00"
+            current_size = f"{d1},{'00'} x {d2},00"
             continue
 
         # Detect product codes (5+ digit codes, possibly with a letter suffix)
