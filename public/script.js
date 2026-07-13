@@ -92,8 +92,48 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function resizeImage(file, maxWidth = 1200, maxHeight = 1200) {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const img = new Image();
+                img.onload = function () {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                        if (width > maxWidth) {
+                            height = Math.round((height * maxWidth) / width);
+                            width = maxWidth;
+                        }
+                    } else {
+                        if (height > maxHeight) {
+                            width = Math.round((width * maxHeight) / height);
+                            height = maxHeight;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    canvas.toBlob((blob) => {
+                        resolve(new File([blob], file.name, {
+                            type: 'image/jpeg',
+                            lastModified: Date.now()
+                        }));
+                    }, 'image/jpeg', 0.85);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
     function checkFormValidity() {
-        if (pdfInput.files.length > 0 && excelInput.files.length > 0) {
+        if (pdfInput.files.length > 0 && excelInput.files.length > 0 && imgInput.files.length > 0) {
             submitBtn.disabled = false;
         } else {
             submitBtn.disabled = true;
@@ -107,17 +147,63 @@ document.addEventListener('DOMContentLoaded', () => {
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         
-        if (!pdfInput.files.length || !excelInput.files.length) return;
+        if (!pdfInput.files.length || !excelInput.files.length || !imgInput.files.length) return;
 
         submitBtn.classList.add('loading');
         submitBtn.disabled = true;
         errorMsg.textContent = '';
+        errorMsg.style.color = '#ef4444';
+
+        // Update button text
+        const setStatus = (txt) => {
+            submitBtn.querySelector('span').textContent = txt;
+        };
+
+        setStatus('Carregando imagens e cache...');
+
+        const cachedProducts = [];
+        const uncachedImages = [];
+        const imageMetadata = {}; // map filename to its cache key
+
+        // 1. Process files, check client-side cache and resize if uncached
+        for (let i = 0; i < imgInput.files.length; i++) {
+            const file = imgInput.files[i];
+            const cacheKey = `autoexcel_img_${file.name}_${file.size}_${file.lastModified}`;
+            imageMetadata[file.name] = cacheKey;
+
+            const cachedData = localStorage.getItem(cacheKey);
+            if (cachedData) {
+                try {
+                    const parsed = JSON.parse(cachedData);
+                    cachedProducts.push(...parsed);
+                } catch {
+                    localStorage.removeItem(cacheKey);
+                    uncachedImages.push(file);
+                }
+            } else {
+                uncachedImages.push(file);
+            }
+        }
+
+        // 2. Resize uncached images on the fly
+        const resizedImages = [];
+        if (uncachedImages.length > 0) {
+            setStatus(`Otimizando ${uncachedImages.length} imagem(ns)...`);
+            for (const imgFile of uncachedImages) {
+                const resized = await resizeImage(imgFile);
+                resizedImages.push(resized);
+            }
+        }
+
+        setStatus('Processando planilha e IA...');
 
         const formData = new FormData();
         formData.append('pdf', pdfInput.files[0]);
         formData.append('excel', excelInput.files[0]);
-        for (let i = 0; i < imgInput.files.length; i++) {
-            formData.append('images', imgInput.files[i]);
+        formData.append('cached_products_json', JSON.stringify(cachedProducts));
+
+        for (const img of resizedImages) {
+            formData.append('images', img);
         }
         
         // Append API settings
@@ -141,13 +227,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     errDetail = await response.text();
                     // Strip HTML if Vercel returned a generic error page
                     if (errDetail.includes('<html') || errDetail.includes('<!DOCTYPE')) {
-                        errDetail = `Erro do servidor (${response.status}). Possível timeout — tente com menos imagens ou arquivos menores.`;
+                        errDetail = `Erro do servidor (${response.status}). Possível timeout ou falha na API da IA.`;
                     }
                 }
-                throw new Error('Erro na API: ' + errDetail);
+                throw new Error(errDetail);
             }
 
             const data = await response.json();
+
+            // Store new extractions in local storage cache
+            if (data.new_extracted_products && data.new_extracted_products.length > 0) {
+                data.new_extracted_products.forEach(item => {
+                    const cacheKey = imageMetadata[item.filename];
+                    if (cacheKey && item.products) {
+                        localStorage.setItem(cacheKey, JSON.stringify(item.products));
+                    }
+                });
+            }
             
             if (data.pending_count > 0) {
                 // Show resolution UI
@@ -211,10 +307,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
         } catch (error) {
-            errorMsg.textContent = error.message;
+            errorMsg.textContent = 'Erro na API: ' + error.message;
         } finally {
             submitBtn.classList.remove('loading');
             submitBtn.disabled = false;
+            setStatus('Processar e Cruzar Dados');
         }
     });
 

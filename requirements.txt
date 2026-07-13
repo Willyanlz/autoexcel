@@ -1,5 +1,5 @@
 openpyxl
-pdfplumber
+pypdf
 fastapi
 python-multipart
 uvicorn

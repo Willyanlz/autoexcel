@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List
-import pdfplumber
+from pypdf import PdfReader
 import openpyxl
 import asyncio
 from dotenv import load_dotenv
@@ -41,7 +41,6 @@ def init_db():
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS image_cache (hash TEXT PRIMARY KEY, json_data TEXT)''')
         c.execute('''CREATE TABLE IF NOT EXISTS manual_mapping (codigo TEXT PRIMARY KEY, price REAL, m2 REAL)''')
         conn.commit()
         conn.close()
@@ -67,7 +66,7 @@ def is_formato_header(cell_val: str) -> bool:
     return up.startswith("FORMATO") or up.startswith("PISO") is False and re.search(r'\d+\s*[xX×]\s*\d+', up) is not None and len(up) < 40
 
 
-def extract_dim_from_header(header: str) -> str | None:
+def extract_dim_from_header(cell_val: str) -> str | None:
     """Extract normalized dimension from a FORMATO header.
     
     'FORMATO 32X58'          → '32x58'
@@ -75,7 +74,7 @@ def extract_dim_from_header(header: str) -> str | None:
     'FORMATO PO I AC 90,5 X 90,5' → '90x90'
     'FORMATO RT 18x113'      → '18x113'
     """
-    m = re.search(r'(\d+)(?:[,.](?:\d+))?\s*[xX×]\s*(\d+)(?:[,.](?:\d+))?', header)
+    m = re.search(r'(\d+)(?:[,.](?:\d+))?\s*[xX×]\s*(\d+)(?:[,.](?:\d+))?', cell_val)
     if m:
         return f"{int(m.group(1))}x{int(m.group(2))}"
     return None
@@ -137,7 +136,7 @@ Retorne EXATAMENTE UM JSON ARRAY com este formato:
 [
   {"tamanho": "32,00 x 58,00", "codigo": "60112A", "nome_produto": "PISO ESML. 60112", "tag_variante": "ESML"}
 ]
-Não adicione markdown (como ```json) ou qualquer outro texto. Apenas o array JSON puro.
+Não adicione markdown (como ```json) or qualquer outro texto. Apenas o array JSON puro.
 """
     try:
         response = await client.chat.completions.create(
@@ -177,46 +176,47 @@ Não adicione markdown (como ```json) ou qualquer outro texto. Apenas o array JS
 def parse_pdf(pdf_bytes):
     """Returns dict[dim_key] → list of candidate products from PDF."""
     candidates_by_dim = {}
-    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text()
-            if not text:
-                continue
-            is_especial = False
-            for line in text.split('\n'):
-                line_upper = line.upper()
-                if "PEÇAS ESPECIAIS" in line_upper or "PEAS ESPECIAIS" in line_upper or "PECAS ESPECIAIS" in line_upper:
-                    is_especial = True
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    for page in reader.pages:
+        text = page.extract_text()
+        if not text:
+            continue
+        is_especial = False
+        for line in text.split('\n'):
+            line_upper = line.upper()
+            if "PEÇAS ESPECIAIS" in line_upper or "PEAS ESPECIAIS" in line_upper or "PECAS ESPECIAIS" in line_upper:
+                is_especial = True
+            
+            match = re.search(
+                r'([\wÀ-ú\s\(\)\-\.]*?)'     # variant prefix (may be empty)
+                r'(\d{2,3})\s*[xX]\s*(\d{2,3})'  # dimensions
+                r'.*?R\$\s*(\d+,\d{2})'        # price
+                r'(?:\s+(\d+,\d{2}))?',         # m²/palete (optional)
+                line
+            )
+            if match:
+                variant_raw = match.group(1).strip()
+                dim1 = match.group(2)
+                dim2 = match.group(3)
+                price = float(match.group(4).replace(',', '.'))
+                m2_str = match.group(5)
+                m2 = round(float(m2_str.replace(',', '.')), 2) if m2_str else None
                 
-                match = re.search(
-                    r'([\wÀ-ú\s\(\)\-\.]*?)'     # variant prefix (may be empty)
-                    r'(\d{2,3})\s*[xX]\s*(\d{2,3})'  # dimensions
-                    r'.*?R\$\s*(\d+,\d{2})'        # price
-                    r'(?:\s+(\d+,\d{2}))?',         # m²/palete (optional)
-                    line
-                )
-                if match:
-                    variant_raw = match.group(1).strip()
-                    dim1 = match.group(2)
-                    dim2 = match.group(3)
-                    price = float(match.group(4).replace(',', '.'))
-                    m2_str = match.group(5)
-                    m2 = round(float(m2_str.replace(',', '.')), 2) if m2_str else None
-                    
-                    dim_key = f"{int(dim1)}x{int(dim2)}"
-                    desc = f"{variant_raw} {dim_key}".strip()
-                    
-                    is_item_especial = is_especial or any(x in line_upper for x in ["RELEVO", "RODAPE", "RODAPÉ", "DEGRAU", "ESPECIAL"])
-                    
-                    candidates_by_dim.setdefault(dim_key, []).append({
-                        "desc": desc, 
-                        "price": price, 
-                        "dim": dim_key, 
-                        "variant_raw": variant_raw.upper(),
-                        "m2": m2,
-                        "is_especial": is_item_especial
-                    })
+                dim_key = f"{int(dim1)}x{int(dim2)}"
+                desc = f"{variant_raw} {dim_key}".strip()
+                
+                is_item_especial = is_especial or any(x in line_upper for x in ["RELEVO", "RODAPE", "RODAPÉ", "DEGRAU", "ESPECIAL"])
+                
+                candidates_by_dim.setdefault(dim_key, []).append({
+                    "desc": desc, 
+                    "price": price, 
+                    "dim": dim_key, 
+                    "variant_raw": variant_raw.upper(),
+                    "m2": m2,
+                    "is_especial": is_item_especial
+                })
     return candidates_by_dim
+
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +228,7 @@ async def process_files(
     pdf: UploadFile = File(...), 
     excel: UploadFile = File(None),
     images: List[UploadFile] = File([]),
+    cached_products_json: str = Form("[]"),
     api_key: str = Form(""),
     llm_model: str = Form("")
 ):
@@ -238,46 +239,39 @@ async def process_files(
     # ---- Collect warnings for the frontend ----
     warnings = []
 
-    # ---- Process images via Cache -> LLM (Parallel execution) ----
-    all_products = []
+    # ---- Load cached products from frontend ----
+    try:
+        all_products = json.loads(cached_products_json)
+    except Exception as e:
+        all_products = []
+        warnings.append(f"Erro ao decodificar produtos cacheados: {e}")
+
+    # ---- Process newly uploaded images ----
+    new_extracted_products = []
+    if images:
+        tasks = []
+        for img in images:
+            img_bytes = await img.read()
+            if not img_bytes:
+                continue
+            tasks.append((img.filename, img.content_type, extract_from_image_via_llm(img_bytes, img.content_type, api_key, llm_model)))
+
+        if tasks:
+            filenames, content_types, extraction_futures = zip(*tasks)
+            results = await asyncio.gather(*extraction_futures)
+            for filename, (products, err) in zip(filenames, results):
+                if err:
+                    warnings.append(f"Imagem ({filename}): falha na extração via IA — {err}")
+                if products:
+                    all_products.extend(products)
+                    new_extracted_products.append({
+                        "filename": filename,
+                        "products": products
+                    })
+
+    # ---- Manual mappings from SQLite ----
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    
-    # 1. Read files and hash them
-    image_hashes = []
-    for img in images:
-        img_bytes = await img.read()
-        if not img_bytes:
-            continue
-        img_hash = get_image_hash(img_bytes)
-        image_hashes.append((img_hash, img.filename, img.content_type, img_bytes))
-    
-    # 2. Check cache and identify which ones need processing
-    images_to_process = []
-    tasks = []
-    
-    for img_hash, filename, content_type, img_bytes in image_hashes:
-        c.execute("SELECT json_data FROM image_cache WHERE hash = ?", (img_hash,))
-        row = c.fetchone()
-        if row:
-            products = json.loads(row[0])
-            all_products.extend(products)
-        else:
-            images_to_process.append((img_hash, filename, content_type, img_bytes))
-            tasks.append(extract_from_image_via_llm(img_bytes, content_type, api_key, llm_model))
-            
-    # 3. Request LLM extractions concurrently if any
-    if tasks:
-        results = await asyncio.gather(*tasks)
-        for (img_hash, filename, content_type, img_bytes), (products, err) in zip(images_to_process, results):
-            if err:
-                warnings.append(f"Imagem ({filename}): falha na extração via IA — {err}")
-            if products:
-                c.execute("INSERT OR REPLACE INTO image_cache (hash, json_data) VALUES (?, ?)", (img_hash, json.dumps(products)))
-                all_products.extend(products)
-        conn.commit()
-        
-    # ---- Manual mappings from SQLite ----
     c.execute("SELECT codigo, price, m2 FROM manual_mapping")
     manual_mappings = {row[0]: {"price": row[1], "m2": row[2]} for row in c.fetchall()}
     conn.close()
@@ -502,8 +496,8 @@ async def process_files(
         warnings.append("Nenhum código de produto encontrado na planilha Excel. Verifique se os códigos estão na coluna A.")
     if len(candidates_by_dim) == 0:
         warnings.append("Nenhum produto encontrado no PDF. Verifique se o PDF contém tabela de preços com dimensões e valores R$.")
-    if images and not all_products:
-        warnings.append("Nenhum produto extraído das imagens. Verifique se o modelo de IA suporta visão (imagens). Modelos recomendados: google/gemini-2.5-flash, openai/gpt-4o-mini.")
+    if not all_products:
+        warnings.append("Nenhum produto extraído das imagens. Verifique as configurações da API Key e se o modelo suporta visão.")
     if len(ambiguous) > 0:
         warnings.append(f"Existem {len(ambiguous)} itens com preços não encontrados ou ambíguos. Eles foram marcados como 'PREENCHA' na planilha para você completar manualmente.")
 
@@ -520,6 +514,7 @@ async def process_files(
         "total_codes": total_codes_found,
         "pdf_dimensions": len(candidates_by_dim),
         "image_products": len(all_products),
+        "new_extracted_products": new_extracted_products,
         "ambiguous": ambiguous,
         "warnings": warnings,
         "excel_base64": b64_excel
