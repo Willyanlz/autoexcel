@@ -1,7 +1,4 @@
-openpyxl
-pypdf
 fastapi
 python-multipart
 uvicorn
-openai
-python-dotenv
+openpyxl

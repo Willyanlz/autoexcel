@@ -1,407 +1,272 @@
-document.addEventListener('DOMContentLoaded', () => {
-    const pdfZone = document.getElementById('pdfZone');
-    const pdfInput = document.getElementById('pdfInput');
-    const pdfName = document.getElementById('pdfName');
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+    ? 'http://127.0.0.1:8000/api'
+    : '/api';
 
-    const imgZone = document.getElementById('imgZone');
-    const imgInput = document.getElementById('imgInput');
-    const imgName = document.getElementById('imgName');
+// Elements
+const dropZoneExcel = document.getElementById('dropZoneExcel');
+const excelFileInput = document.getElementById('excelFile');
+const excelFileName = document.getElementById('excelFileName');
+const uploadForm = document.getElementById('uploadForm');
 
-    const excelZone = document.getElementById('excelZone');
-    const excelInput = document.getElementById('excelInput');
-    const excelName = document.getElementById('excelName');
+const step1 = document.getElementById('step-1');
+const step2 = document.getElementById('step-2');
+const btnBack = document.getElementById('btnBack');
+const btnProcess = document.getElementById('btnProcess');
+const formatsTableBody = document.getElementById('formatsTableBody');
 
-    const submitBtn = document.getElementById('submitBtn');
-    const form = document.getElementById('uploadForm');
-    const errorMsg = document.getElementById('errorMsg');
+const loadingOverlay = document.getElementById('loadingOverlay');
+const loadingText = document.getElementById('loadingText');
 
-    const mainContainer = document.getElementById('mainContainer');
-    const resolveContainer = document.getElementById('resolveContainer');
-    const resolveTableBody = document.querySelector('#resolveTable tbody');
-    const resolveStats = document.getElementById('resolveStats');
-    const resolveBtn = document.getElementById('resolveBtn');
+let currentFormats = [];
+let selectedExcelFile = null;
 
-    // Settings elements
-    const settingsBtn = document.getElementById('settingsBtn');
-    const settingsModal = document.getElementById('settingsModal');
-    const closeSettings = document.getElementById('closeSettings');
-    const saveSettingsBtn = document.getElementById('saveSettingsBtn');
-    const apiKeyInput = document.getElementById('apiKey');
-    const llmModelInput = document.getElementById('llmModel');
+// Handle Drag and Drop for Excel
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    dropZoneExcel.addEventListener(eventName, preventDefaults, false);
+});
 
-    let currentExcelBase64 = null;
-    let currentAmbiguities = [];
+function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+}
 
-    // Load settings on init
-    apiKeyInput.value = localStorage.getItem('autoexcel_api_key') || '';
-    if (localStorage.getItem('autoexcel_model')) {
-        llmModelInput.value = localStorage.getItem('autoexcel_model');
+['dragenter', 'dragover'].forEach(eventName => {
+    dropZoneExcel.addEventListener(eventName, () => {
+        dropZoneExcel.classList.add('dragover');
+    }, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+    dropZoneExcel.addEventListener(eventName, () => {
+        dropZoneExcel.classList.remove('dragover');
+    }, false);
+});
+
+dropZoneExcel.addEventListener('drop', (e) => {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    if (files.length > 0) {
+        excelFileInput.files = files;
+        updateFileName(excelFileInput, excelFileName);
     }
+});
 
-    settingsBtn.addEventListener('click', () => {
-        settingsModal.style.display = 'flex';
-    });
+dropZoneExcel.addEventListener('click', () => {
+    excelFileInput.click();
+});
 
-    closeSettings.addEventListener('click', () => {
-        settingsModal.style.display = 'none';
-    });
+excelFileInput.addEventListener('change', () => {
+    updateFileName(excelFileInput, excelFileName);
+});
 
-    saveSettingsBtn.addEventListener('click', () => {
-        localStorage.setItem('autoexcel_api_key', apiKeyInput.value.trim());
-        localStorage.setItem('autoexcel_model', llmModelInput.value.trim());
-        settingsModal.style.display = 'none';
-        alert('Configurações salvas no navegador!');
-    });
-
-    function setupDropZone(zone, input, nameElement) {
-        zone.addEventListener('click', () => input.click());
-
-        zone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            zone.classList.add('dragover');
-        });
-
-        zone.addEventListener('dragleave', () => {
-            zone.classList.remove('dragover');
-        });
-
-        zone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            zone.classList.remove('dragover');
-            
-            if (e.dataTransfer.files.length > 0) {
-                input.files = e.dataTransfer.files;
-                updateFileName(input, nameElement);
-                checkFormValidity();
-            }
-        });
-
-        input.addEventListener('change', () => {
-            updateFileName(input, nameElement);
-            checkFormValidity();
-        });
+function updateFileName(input, displayElement) {
+    if (input.files.length > 0) {
+        displayElement.textContent = input.files[0].name;
+        displayElement.style.color = 'var(--primary)';
+        displayElement.style.fontWeight = '600';
+    } else {
+        displayElement.textContent = 'Nenhum arquivo selecionado';
+        displayElement.style.color = 'var(--text-secondary)';
+        displayElement.style.fontWeight = 'normal';
     }
+}
 
-    function updateFileName(input, nameElement) {
-        if (input.files.length > 1) {
-            nameElement.textContent = `${input.files.length} arquivos selecionados`;
-        } else if (input.files.length === 1) {
-            nameElement.textContent = input.files[0].name;
-        } else {
-            nameElement.textContent = 'Nenhum arquivo';
-        }
+function showLoading(text) {
+    loadingText.textContent = text;
+    loadingOverlay.style.display = 'flex';
+}
+
+function hideLoading() {
+    loadingOverlay.style.display = 'none';
+}
+
+function showError(msg) {
+    document.getElementById('errorMsg').textContent = msg;
+    const toast = document.getElementById('errorToast');
+    toast.style.display = 'flex';
+    setTimeout(() => {
+        toast.style.display = 'none';
+    }, 8000);
+}
+
+function closeToast(id) {
+    document.getElementById(id).style.display = 'none';
+}
+
+// Memory: Load mappings from LocalStorage
+function getSavedMapping(formatName) {
+    const saved = localStorage.getItem('autoexcel_mappings');
+    if (saved) {
+        const mappings = JSON.parse(saved);
+        return mappings[formatName] || null;
     }
+    return null;
+}
 
-    async function resizeImage(file, maxWidth = 1200, maxHeight = 1200) {
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = function (e) {
-                const img = new Image();
-                img.onload = function () {
-                    const canvas = document.createElement('canvas');
-                    let width = img.width;
-                    let height = img.height;
+// Memory: Save all mappings to LocalStorage
+function saveMappingsToStorage(mappingsObj) {
+    const saved = localStorage.getItem('autoexcel_mappings');
+    let allMappings = saved ? JSON.parse(saved) : {};
+    
+    // Merge new mappings
+    allMappings = { ...allMappings, ...mappingsObj };
+    localStorage.setItem('autoexcel_mappings', JSON.stringify(allMappings));
+}
 
-                    if (width > height) {
-                        if (width > maxWidth) {
-                            height = Math.round((height * maxWidth) / width);
-                            width = maxWidth;
-                        }
-                    } else {
-                        if (height > maxHeight) {
-                            width = Math.round((width * maxHeight) / height);
-                            height = maxHeight;
-                        }
-                    }
-
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
-
-                    canvas.toBlob((blob) => {
-                        resolve(new File([blob], file.name, {
-                            type: 'image/jpeg',
-                            lastModified: Date.now()
-                        }));
-                    }, 'image/jpeg', 0.85);
-                };
-                img.src = e.target.result;
-            };
-            reader.readAsDataURL(file);
-        });
-    }
-
-    function checkFormValidity() {
-        if (pdfInput.files.length > 0 && excelInput.files.length > 0 && imgInput.files.length > 0) {
-            submitBtn.disabled = false;
-        } else {
-            submitBtn.disabled = true;
-        }
-    }
-
-    setupDropZone(pdfZone, pdfInput, pdfName);
-    setupDropZone(imgZone, imgInput, imgName);
-    setupDropZone(excelZone, excelInput, excelName);
-
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        if (!pdfInput.files.length || !excelInput.files.length || !imgInput.files.length) return;
-
-        submitBtn.classList.add('loading');
-        submitBtn.disabled = true;
-        errorMsg.textContent = '';
-        errorMsg.style.color = '#ef4444';
-
-        // Update button text
-        const setStatus = (txt) => {
-            submitBtn.querySelector('span').textContent = txt;
-        };
-
-        setStatus('Carregando imagens e cache...');
-
-        const allExtractedProducts = [];
-        const uncachedImages = [];
-        const imageMetadata = {}; // map file object to cache key
-
-        // 1. Process files, check client-side cache
-        for (let i = 0; i < imgInput.files.length; i++) {
-            const file = imgInput.files[i];
-            const cacheKey = `autoexcel_img_${file.name}_${file.size}_${file.lastModified}`;
-            imageMetadata[file.name] = cacheKey;
-
-            const cachedData = localStorage.getItem(cacheKey);
-            if (cachedData) {
-                try {
-                    const parsed = JSON.parse(cachedData);
-                    allExtractedProducts.push(...parsed);
-                } catch {
-                    localStorage.removeItem(cacheKey);
-                    uncachedImages.push(file);
-                }
-            } else {
-                uncachedImages.push(file);
-            }
-        }
-
-        // 2. Process uncached images ONE BY ONE to prevent Vercel timeouts
-        const apiKey = localStorage.getItem('autoexcel_api_key') || '';
-        const model = localStorage.getItem('autoexcel_model') || 'google/gemini-2.5-flash';
-
-        try {
-            if (uncachedImages.length > 0) {
-                for (let idx = 0; idx < uncachedImages.length; idx++) {
-                    const imgFile = uncachedImages[idx];
-                    setStatus(`Otimizando imagem ${idx + 1} de ${uncachedImages.length}...`);
-                    
-                    const resized = await resizeImage(imgFile);
-                    
-                    setStatus(`Analisando imagem ${idx + 1} de ${uncachedImages.length} com IA...`);
-
-                    const imgFormData = new FormData();
-                    imgFormData.append('image', resized);
-                    imgFormData.append('api_key', apiKey);
-                    imgFormData.append('llm_model', model);
-
-                    const imgResponse = await fetch('/api/extract-image', {
-                        method: 'POST',
-                        body: imgFormData
-                    });
-
-                    if (!imgResponse.ok) {
-                        let imgErrDetail = '';
-                        try {
-                            const errJson = await imgResponse.json();
-                            imgErrDetail = errJson.error || JSON.stringify(errJson);
-                        } catch {
-                            imgErrDetail = await imgResponse.text();
-                            if (imgErrDetail.includes('<html') || imgErrDetail.includes('<!DOCTYPE')) {
-                                imgErrDetail = `Erro na extração da imagem ${imgFile.name}. Possível falha na API da IA.`;
-                            }
-                        }
-                        throw new Error(`Imagem (${imgFile.name}): ${imgErrDetail}`);
-                    }
-
-                    const imgData = await imgResponse.json();
-                    if (imgData.products) {
-                        allExtractedProducts.push(...imgData.products);
-                        // Save to client-side localStorage cache
-                        const cacheKey = imageMetadata[imgFile.name];
-                        if (cacheKey) {
-                            localStorage.setItem(cacheKey, JSON.stringify(imgData.products));
-                        }
-                    }
-                }
-            }
-
-            setStatus('Gerando planilha Excel...');
-
-            const formData = new FormData();
-            formData.append('pdf', pdfInput.files[0]);
-            formData.append('excel', excelInput.files[0]);
-            formData.append('image_products_json', JSON.stringify(allExtractedProducts));
-
-            const response = await fetch('/api/process', {
-                method: 'POST',
-                body: formData
-            });
-
-            if (!response.ok) {
-                let errDetail = '';
-                try {
-                    const errJson = await response.json();
-                    errDetail = errJson.error || errJson.detail || JSON.stringify(errJson);
-                } catch {
-                    errDetail = await response.text();
-                    if (errDetail.includes('<html') || errDetail.includes('<!DOCTYPE')) {
-                        errDetail = `Erro do servidor (${response.status}) ao processar a planilha.`;
-                    }
-                }
-                throw new Error(errDetail);
-            }
-
-            const data = await response.json();
-            
-            if (data.pending_count > 0) {
-                // Show resolution UI
-                currentExcelBase64 = data.excel_base64;
-                currentAmbiguities = data.ambiguous;
-                
-                mainContainer.style.display = 'none';
-                resolveContainer.style.display = 'block';
-                resolveStats.textContent = `Preenchidos automaticamente: ${data.success_count} | Pendências para revisar: ${data.pending_count}`;
-                
-                // Show warnings if any
-                if (data.warnings && data.warnings.length > 0) {
-                    resolveStats.textContent += '\n⚠️ ' + data.warnings.join('\n⚠️ ');
-                }
-                
-                resolveTableBody.innerHTML = '';
-                currentAmbiguities.forEach((amb) => {
-                    const tr = document.createElement('tr');
-                    
-                    const tdCode = document.createElement('td');
-                    tdCode.textContent = amb.codigo;
-                    tr.appendChild(tdCode);
-                    
-                    const tdName = document.createElement('td');
-                    tdName.textContent = amb.nome;
-                    tr.appendChild(tdName);
-                    
-                    const tdSelect = document.createElement('td');
-                    const select = document.createElement('select');
-                    select.dataset.row = amb.row;
-                    select.dataset.codigo = amb.codigo;
-                    
-                    // Default option
-                    const optDefault = document.createElement('option');
-                    optDefault.value = "";
-                    optDefault.textContent = "-- Selecione a Variante --";
-                    select.appendChild(optDefault);
-                    
-                    amb.opcoes.forEach(op => {
-                        const option = document.createElement('option');
-                        option.value = JSON.stringify({price: op.price, m2: op.m2});
-                        option.textContent = `${op.desc} - R$ ${op.price}`;
-                        select.appendChild(option);
-                    });
-                    
-                    tdSelect.appendChild(select);
-                    tr.appendChild(tdSelect);
-                    
-                    resolveTableBody.appendChild(tr);
-                });
-
-            } else {
-                // No pending, download the excel directly from base64
-                downloadExcel(data.excel_base64, 'Tabela_Final.xlsx');
-                let msg = `✅ Sucesso! ${data.success_count} preenchidos. Nenhuma pendência.`;
-                if (data.warnings && data.warnings.length > 0) {
-                    msg += '\n⚠️ ' + data.warnings.join('\n⚠️ ');
-                }
-                errorMsg.textContent = msg;
-                errorMsg.style.color = '#10b981';
-            }
-
-        } catch (error) {
-            errorMsg.textContent = 'Erro: ' + error.message;
-        } finally {
-            submitBtn.classList.remove('loading');
-            submitBtn.disabled = false;
-            setStatus('Processar e Cruzar Dados');
-        }
-    });
-
-    resolveBtn.addEventListener('click', async () => {
-        const selects = document.querySelectorAll('#resolveTable select');
-        const resolutions = [];
-        
-        selects.forEach(sel => {
-            if (sel.value) {
-                const val = JSON.parse(sel.value);
-                resolutions.push({
-                    codigo: sel.dataset.codigo,
-                    row: parseInt(sel.dataset.row),
-                    price: val.price,
-                    m2: val.m2
-                });
-            }
-        });
-
-        if (resolutions.length === 0) {
-            alert('Por favor, resolva pelo menos uma ambiguidade.');
-            return;
-        }
-
-        resolveBtn.textContent = 'Gerando...';
-        resolveBtn.disabled = true;
-
-        try {
-            const response = await fetch('/api/resolve', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    resolutions: resolutions,
-                    excel_base64: currentExcelBase64
-                })
-            });
-
-            if (!response.ok) throw new Error('Erro ao salvar resoluções.');
-
-            const blob = await response.blob();
-            downloadBlob(blob, 'Tabela_Final.xlsx');
-            
-            // Reset state
-            resolveContainer.style.display = 'none';
-            mainContainer.style.display = 'block';
-
-        } catch(e) {
-            alert(e.message);
-        } finally {
-            resolveBtn.textContent = 'Confirmar e Baixar Excel';
-            resolveBtn.disabled = false;
-        }
-    });
-
-    function downloadExcel(base64Data, filename) {
-        const binaryString = window.atob(base64Data);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-        }
-        const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        downloadBlob(blob, filename);
+// Step 1: Extract Formats
+uploadForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    if (!excelFileInput.files || excelFileInput.files.length === 0) {
+        showError("Por favor, selecione uma planilha Excel.");
+        return;
     }
     
-    function downloadBlob(blob, filename) {
+    selectedExcelFile = excelFileInput.files[0];
+    const formData = new FormData();
+    formData.append('excel', selectedExcelFile);
+    
+    showLoading("Lendo planilha e buscando formatos...");
+    
+    try {
+        const response = await fetch(`${API_BASE}/extract-formats`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok || data.error) {
+            throw new Error(data.error || "Erro ao ler a planilha.");
+        }
+        
+        currentFormats = data.formats;
+        renderFormatsTable();
+        
+        step1.style.display = 'none';
+        step2.style.display = 'block';
+        
+    } catch (err) {
+        showError(err.message);
+    } finally {
+        hideLoading();
+    }
+});
+
+// Go back to step 1
+btnBack.addEventListener('click', () => {
+    step2.style.display = 'none';
+    step1.style.display = 'block';
+});
+
+// Render dynamic inputs
+function renderFormatsTable() {
+    formatsTableBody.innerHTML = '';
+    
+    if (currentFormats.length === 0) {
+        formatsTableBody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--text-secondary);">Nenhum formato encontrado na planilha.</td></tr>';
+        return;
+    }
+    
+    currentFormats.forEach((format, index) => {
+        const saved = getSavedMapping(format);
+        const defaultPrice = saved ? saved.price : '';
+        const defaultExtra = saved ? saved.extra : '';
+        
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="font-weight: 600;">${format}</td>
+            <td>
+                <div class="input-group">
+                    <span class="input-prefix">R$</span>
+                    <input type="number" step="0.01" min="0" class="price-input" data-format="${format}" data-type="price" value="${defaultPrice}" placeholder="Ex: 12,70" required>
+                </div>
+            </td>
+            <td>
+                <div class="input-group">
+                    <span class="input-prefix">+ R$</span>
+                    <input type="number" step="0.01" min="0" class="extra-input" data-format="${format}" data-type="extra" value="${defaultExtra}" placeholder="Ex: 3,00" required>
+                </div>
+            </td>
+        `;
+        formatsTableBody.appendChild(tr);
+    });
+}
+
+// Step 2: Generate Final Excel
+btnProcess.addEventListener('click', async () => {
+    // Collect data
+    const mappings = {};
+    let hasError = false;
+    
+    const priceInputs = document.querySelectorAll('.price-input');
+    const extraInputs = document.querySelectorAll('.extra-input');
+    
+    priceInputs.forEach((input, i) => {
+        const format = input.getAttribute('data-format');
+        const priceVal = parseFloat(input.value);
+        const extraVal = parseFloat(extraInputs[i].value);
+        
+        if (isNaN(priceVal) || isNaN(extraVal)) {
+            hasError = true;
+            input.style.borderColor = 'red';
+        } else {
+            input.style.borderColor = '';
+            mappings[format] = {
+                price: priceVal,
+                extra: extraVal
+            };
+        }
+    });
+    
+    if (hasError) {
+        showError("Por favor, preencha todos os preços base e acréscimos com números válidos.");
+        return;
+    }
+    
+    // Save to LocalStorage memory
+    saveMappingsToStorage(mappings);
+    
+    const formData = new FormData();
+    formData.append('excel', selectedExcelFile);
+    formData.append('mapping_json', JSON.stringify(mappings));
+    
+    showLoading("Preenchendo milhares de células magicamente...");
+    
+    try {
+        const response = await fetch(`${API_BASE}/process-manual`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok || data.error) {
+            throw new Error(data.error || "Erro ao processar planilha.");
+        }
+        
+        // Download result
+        const bytes = atob(data.excel_base64);
+        const array = new Uint8Array(bytes.length);
+        for (let i = 0; i < bytes.length; i++) {
+            array[i] = bytes.charCodeAt(i);
+        }
+        
+        const blob = new Blob([array], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
         const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
+        const a = document.createElement("a");
         a.href = url;
-        a.download = filename;
+        a.download = "Planilha_AutoExcel_Preenchida.xlsx";
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
+        a.remove();
+        
+        alert(`Sucesso! ${data.success_count} produtos precificados.\nTotal de produtos detectados: ${data.total_codes}`);
+        
+    } catch (err) {
+        showError(err.message);
+    } finally {
+        hideLoading();
     }
 });
