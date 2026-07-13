@@ -2,4 +2,3 @@ fastapi
 python-multipart
 uvicorn
 openpyxl
-easyocr
