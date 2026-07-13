@@ -449,6 +449,26 @@ async def process_files(
         # Detect FORMATO header → extract dimension to find PDF candidates
         dim = extract_dim_from_header(cell_val)
         if dim is not None:
+            # Fuzzy match to closest dimension in candidates_by_dim if not exact match
+            if dim not in candidates_by_dim and candidates_by_dim:
+                w, h = map(int, dim.split('x'))
+                best_match = None
+                best_dist = 999
+                for pdf_dim in candidates_by_dim.keys():
+                    try:
+                        pw, ph = map(int, pdf_dim.split('x'))
+                    except ValueError:
+                        continue
+                    dist = min(
+                        abs(w - pw) + abs(h - ph),
+                        abs(w - ph) + abs(h - pw)
+                    )
+                    if dist < best_dist and dist <= 3:
+                        best_dist = dist
+                        best_match = pdf_dim
+                if best_match:
+                    dim = best_match
+
             current_dim = dim
             current_opts = candidates_by_dim.get(current_dim, [])
             continue
