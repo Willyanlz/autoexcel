@@ -88,9 +88,40 @@ def extract_products_ocr(image_bytes: bytes):
     if not result:
         return []
 
-    lines = [item[1] for item in result]
-    full_text = "\n".join(lines)
-    lines = full_text.split("\n")
+    # Calculate center Y and min X for each item
+    items = []
+    for box, text, score in result:
+        y_center = sum(pt[1] for pt in box) / 4.0
+        x_min = min(pt[0] for pt in box)
+        items.append({"text": text, "y": y_center, "x": x_min})
+        
+    # Sort by Y first
+    items.sort(key=lambda item: item["y"])
+    
+    # Group by Y with tolerance
+    lines_reconstructed = []
+    current_line = []
+    current_y = None
+    tolerance = 15 # pixels
+    
+    for item in items:
+        if current_y is None:
+            current_y = item["y"]
+            current_line.append(item)
+        elif abs(item["y"] - current_y) < tolerance:
+            current_line.append(item)
+            current_y = sum(i["y"] for i in current_line) / len(current_line)
+        else:
+            current_line.sort(key=lambda i: i["x"])
+            lines_reconstructed.append(" ".join(i["text"] for i in current_line))
+            current_line = [item]
+            current_y = item["y"]
+            
+    if current_line:
+        current_line.sort(key=lambda i: i["x"])
+        lines_reconstructed.append(" ".join(i["text"] for i in current_line))
+
+    lines = lines_reconstructed
 
     products = []
     current_size = None
@@ -114,12 +145,17 @@ def extract_products_ocr(image_bytes: bytes):
         if 'sub-total' in line.lower() or 'sub total' in line.lower():
             continue
 
-        # Pattern: 1 MAC518009A PISO VANCOUVER MAC 518.009
-        # \d+ \w+ (description...)
-        prod_match = re.search(r'^\s*\d+\s+[A-Z0-9]+\s+(.+)$', line, flags=re.IGNORECASE)
-        if prod_match:
-            produto = prod_match.group(1).strip()
-            # Apply same rules as AI
+        # Remove sequential number and system code if they exist at the start
+        # e.g., "1 MAC518009A PISO VANCOUVER..." -> "PISO VANCOUVER..."
+        cleaned_line = re.sub(r'^\s*\d+\s+[A-Z0-9]{5,15}\s+', '', line).strip()
+        
+        # If it didn't match the \d+, maybe it's just "MAC518009A PISO..."
+        if cleaned_line == line.strip():
+             cleaned_line = re.sub(r'^[A-Z0-9]{5,15}\s+', '', cleaned_line).strip()
+
+        if len(cleaned_line) > 5 and 'tamanho' not in cleaned_line.lower() and 'sub-total' not in cleaned_line.lower():
+            produto = cleaned_line
+            # Apply the same rules as the AI
             if produto.upper().startswith("PISO ESML."):
                 codigo = produto[len("PISO ESML."):].strip()
             elif produto.upper().startswith("PISO HD"):
@@ -131,14 +167,6 @@ def extract_products_ocr(image_bytes: bytes):
                 "tamanho": current_size or "DESCONHECIDO",
                 "codigo": codigo
             })
-        else:
-            # Fallback for codes if the line format is different
-            code_matches = re.findall(r'\b(\d{4,6}[A-Za-z]?)\b', line)
-            if code_matches:
-                products.append({
-                    "tamanho": current_size or "DESCONHECIDO",
-                    "codigo": code_matches[-1]
-                })
 
     return products
 
