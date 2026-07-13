@@ -16,6 +16,8 @@ import openpyxl
 from dotenv import load_dotenv
 from openai import OpenAI
 
+import tempfile
+
 load_dotenv()
 
 app = FastAPI()
@@ -28,7 +30,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DB_PATH = "mapping_images.db"
+# Use system temp directory for database to allow write permissions in serverless (e.g. Vercel)
+DB_PATH = os.path.join(tempfile.gettempdir(), "mapping_images.db")
 LLM_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 CURRENCY_FMT = 'R$ #.##0,00'
