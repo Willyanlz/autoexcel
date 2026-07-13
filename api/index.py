@@ -220,19 +220,24 @@ def parse_pdf(pdf_bytes):
                 is_especial = True
             
             match = re.search(
-                r'([\wÀ-ú\s\(\)\-\.]*?)'     # variant prefix (may be empty)
+                r'([\wÀ-ú\s\(\)\-\.]*?)'         # variant prefix (may be empty)
                 r'(\d{2,3})\s*[xX]\s*(\d{2,3})'  # dimensions
-                r'.*?R\$\s*(\d+,\d{2})'        # price
-                r'(?:\s+(\d+,\d{2}))?',         # m²/palete (optional)
+                r'(.*)',                        # the rest of the line
                 line
             )
             if match:
                 variant_raw = match.group(1).strip()
                 dim1 = match.group(2)
                 dim2 = match.group(3)
-                price = float(match.group(4).replace(',', '.'))
-                m2_str = match.group(5)
-                m2 = round(float(m2_str.replace(',', '.')), 2) if m2_str else None
+                rest = match.group(4)
+                
+                money_matches = re.findall(r'(\d+,\d{1,2})', rest)
+                if not money_matches:
+                    continue
+                
+                floats = [float(m.replace(',', '.')) for m in money_matches]
+                price = min(floats)
+                m2 = max(floats) if len(floats) > 1 else None
                 
                 dim_key = f"{int(dim1)}x{int(dim2)}"
                 desc = f"{variant_raw} {dim_key}".strip()
