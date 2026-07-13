@@ -81,6 +81,28 @@ def set_price_cell(ws, row, col, value):
     cell.number_format = '#,##0.00" "[$R$-pt-BR]'
 
 
+def get_fallback_candidate(opts):
+    """Choose the best default candidate from the PDF candidates.
+    Prefer standard pieces over special ones, and prefer candidates with a blank variant (pure size).
+    """
+    if not opts:
+        return None
+    # 1. Filter out special pieces
+    std_candidates = [opt for opt in opts if not opt.get("is_especial", False)]
+    if not std_candidates:
+        std_candidates = opts
+    
+    # 2. Prefer candidate with empty variant (representing the plain base size, e.g. "32 x 58 R$ 12,70")
+    blank_variants = [opt for opt in std_candidates if opt["variant_raw"] == ""]
+    if len(blank_variants) == 1:
+        return blank_variants[0]
+    elif len(blank_variants) > 1:
+        return sorted(blank_variants, key=lambda x: x["price"])[0]
+        
+    # 3. If no empty variant candidate exists, fallback to the lowest price option
+    return sorted(std_candidates, key=lambda x: x["price"])[0]
+
+
 # ---------------------------------------------------------------------------
 # LLM image extraction
 # ---------------------------------------------------------------------------
@@ -321,17 +343,15 @@ async def process_files(
                     ws.cell(row=r, column=9, value=current_opts[0]["m2"])
                 success_count += 1
             elif len(current_opts) > 1:
-                # Ambiguity: filter out special pieces and use the lowest standard price (base price of format)
-                std_candidates = [opt for opt in current_opts if not opt.get("is_especial", False)]
-                if not std_candidates:
-                    std_candidates = current_opts
-                
-                sorted_std = sorted(std_candidates, key=lambda x: x["price"])
-                chosen_opt = sorted_std[0]
-                set_price_cell(ws, r, 2, chosen_opt["price"])
-                if chosen_opt["m2"]:
-                    ws.cell(row=r, column=9, value=chosen_opt["m2"])
-                success_count += 1
+                # Use our fallback logic to get the base size price (e.g. 12,70 for 32x58)
+                chosen_opt = get_fallback_candidate(current_opts)
+                if chosen_opt:
+                    set_price_cell(ws, r, 2, chosen_opt["price"])
+                    if chosen_opt["m2"]:
+                        ws.cell(row=r, column=9, value=chosen_opt["m2"])
+                    success_count += 1
+                else:
+                    ws.cell(row=r, column=2, value="PREENCHA")
             else:
                 ws.cell(row=r, column=2, value="PREENCHA")
             continue
@@ -357,19 +377,16 @@ async def process_files(
                 ws.cell(row=r, column=9, value=current_opts[0]["m2"])
             success_count += 1
         else:
-            # Ambiguity exists even with tags or no tags match, pick the lowest standard price (base price)
+            # Ambiguity exists even with tags or no tags match, pick fallback candidate
             opts_to_use = matched_opts if matched_opts else current_opts
-            std_candidates = [opt for opt in opts_to_use if not opt.get("is_especial", False)]
-            if not std_candidates:
-                std_candidates = opts_to_use
-                
-            sorted_std = sorted(std_candidates, key=lambda x: x["price"])
-            chosen_opt = sorted_std[0]
-            
-            set_price_cell(ws, r, 2, chosen_opt["price"])
-            if chosen_opt["m2"]:
-                ws.cell(row=r, column=9, value=chosen_opt["m2"])
-            success_count += 1
+            chosen_opt = get_fallback_candidate(opts_to_use)
+            if chosen_opt:
+                set_price_cell(ws, r, 2, chosen_opt["price"])
+                if chosen_opt["m2"]:
+                    ws.cell(row=r, column=9, value=chosen_opt["m2"])
+                success_count += 1
+            else:
+                ws.cell(row=r, column=2, value="PREENCHA")
 
     # ---- Add diagnostic warnings ----
     if total_codes_found == 0:
