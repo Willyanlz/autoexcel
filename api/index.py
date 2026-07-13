@@ -109,14 +109,36 @@ def extract_products_ocr(image_bytes: bytes):
             d1, d2 = size_match.group(1), size_match.group(2)
             current_size = f"{d1},{'00'} x {d2},00"
             continue
+            
+        # Ignore sub-totals
+        if 'sub-total' in line.lower() or 'sub total' in line.lower():
+            continue
 
-        # Detect product codes (5+ digit codes, possibly with a letter suffix)
-        code_matches = re.findall(r'\b(\d{4,6}[A-Za-z]?)\b', line)
-        for code in code_matches:
+        # Pattern: 1 MAC518009A PISO VANCOUVER MAC 518.009
+        # \d+ \w+ (description...)
+        prod_match = re.search(r'^\s*\d+\s+[A-Z0-9]+\s+(.+)$', line, flags=re.IGNORECASE)
+        if prod_match:
+            produto = prod_match.group(1).strip()
+            # Apply same rules as AI
+            if produto.upper().startswith("PISO ESML."):
+                codigo = produto[len("PISO ESML."):].strip()
+            elif produto.upper().startswith("PISO HD"):
+                codigo = produto[len("PISO HD"):].strip()
+            else:
+                codigo = produto
+                
             products.append({
                 "tamanho": current_size or "DESCONHECIDO",
-                "codigo": code
+                "codigo": codigo
             })
+        else:
+            # Fallback for codes if the line format is different
+            code_matches = re.findall(r'\b(\d{4,6}[A-Za-z]?)\b', line)
+            if code_matches:
+                products.append({
+                    "tamanho": current_size or "DESCONHECIDO",
+                    "codigo": code_matches[-1]
+                })
 
     return products
 
@@ -136,15 +158,30 @@ async def extract_from_image_via_ai(image_bytes: bytes, mime_type: str, api_key:
     base64_img = base64.b64encode(image_bytes).decode('utf-8')
     data_uri = f"data:{mime_type};base64,{base64_img}"
 
-    prompt = """Você é um assistente de extração de dados. Extraia as informações da imagem da tabela de produtos.
-A imagem contém blocos de produtos separados por 'Tamanho' (ex: Tamanho: 32,00 x 58,00).
-Sob cada tamanho, há uma lista de produtos. Cada linha tem um Código (ex: 60112A).
+    prompt = """Você é um assistente de extração de dados de planilhas/imagens.
+Extraia as informações da imagem de produtos. A imagem contém blocos separados por 'Tamanho' (ex: Tamanho: 32,00 x 58,00).
+Sob cada tamanho, há uma lista de produtos.
+
+Preciso que você extraia a identificação final de cada produto (código ou nome), seguindo EXATAMENTE este padrão de conversão baseado no formato das linhas:
+- Se for "1 I60112A PISO ESML. 60112", extraia apenas "60112"
+- Se for "2 IN1531 PISO ESML. 60072", extraia apenas "60072"
+- Se for "3 I60141A PISO HD 60141", extraia apenas "60141"
+- Se for "1 MAC518009A PISO VANCOUVER MAC 518.009", extraia o nome todo "PISO VANCOUVER MAC 518.009"
+- Se for "1 MRT250008A PISO ESML. RT 250.008", extraia apenas "RT 250.008"
+
+Regras gerais:
+1. Ignore o número sequencial no início da linha (ex: 1, 2, 3).
+2. Ignore o código interno colado de sistema que vem logo depois (ex: I60112A, MAC518009A).
+3. Pegue a descrição/nome do produto que vem a seguir. 
+4. SE a descrição começar com "PISO ESML." ou "PISO HD", remova essa parte e extraia apenas o que sobrar (ex: "60112", "RT 250.008", "160.088").
+5. SE a descrição NÃO começar com esses prefixos, extraia a descrição INTEIRA (ex: "PISO VANCOUVER MAC 518.009").
 
 Retorne EXATAMENTE UM JSON ARRAY com este formato:
 [
-  {"tamanho": "32,00 x 58,00", "codigo": "60112A"}
+  {"tamanho": "32,00 x 58,00", "codigo": "60112"},
+  {"tamanho": "18,00 x 113,00 RT", "codigo": "PISO VANCOUVER MAC 518.009"}
 ]
-Não adicione markdown (como ```json) ou qualquer outro texto. Apenas o array JSON puro.
+Não adicione markdown (como ```json). Apenas o array JSON puro.
 """
     try:
         response = await client.chat.completions.create(
