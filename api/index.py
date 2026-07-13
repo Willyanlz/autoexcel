@@ -13,8 +13,9 @@ from pydantic import BaseModel
 from typing import List
 import pdfplumber
 import openpyxl
+import asyncio
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 import tempfile
 
@@ -84,14 +85,14 @@ def set_price_cell(ws, row, col, value):
 # LLM image extraction
 # ---------------------------------------------------------------------------
 
-def extract_from_image_via_llm(image_bytes: bytes, mime_type: str, api_key: str, model: str):
+async def extract_from_image_via_llm(image_bytes: bytes, mime_type: str, api_key: str, model: str):
     """Returns (products_list, error_string_or_None)."""
     if not api_key:
         api_key = OPENROUTER_API_KEY
     if not api_key:
         return [], "OpenRouter API Key não informada. Configure na engrenagem no topo da tela."
     
-    client = OpenAI(
+    client = AsyncOpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=api_key,
     )
@@ -111,7 +112,7 @@ Retorne EXATAMENTE UM JSON ARRAY com este formato:
 Não adicione markdown (como ```json) ou qualquer outro texto. Apenas o array JSON puro.
 """
     try:
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model=model or LLM_MODEL,
             max_tokens=8000,
             messages=[
@@ -199,31 +200,44 @@ async def process_files(
     # ---- Collect warnings for the frontend ----
     warnings = []
 
-    # ---- Process images via Cache -> LLM ----
+    # ---- Process images via Cache -> LLM (Parallel execution) ----
     all_products = []
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    for idx, img in enumerate(images):
+    # 1. Read files and hash them
+    image_hashes = []
+    for img in images:
         img_bytes = await img.read()
         if not img_bytes:
             continue
         img_hash = get_image_hash(img_bytes)
-        
+        image_hashes.append((img_hash, img.filename, img.content_type, img_bytes))
+    
+    # 2. Check cache and identify which ones need processing
+    images_to_process = []
+    tasks = []
+    
+    for img_hash, filename, content_type, img_bytes in image_hashes:
         c.execute("SELECT json_data FROM image_cache WHERE hash = ?", (img_hash,))
         row = c.fetchone()
-        
         if row:
             products = json.loads(row[0])
+            all_products.extend(products)
         else:
-            products, err = extract_from_image_via_llm(img_bytes, img.content_type, api_key, llm_model)
-            if err:
-                warnings.append(f"Imagem {idx+1} ({img.filename}): falha na extração via IA — {err}")
-            if products:  # Only cache successful extractions
-                c.execute("INSERT INTO image_cache (hash, json_data) VALUES (?, ?)", (img_hash, json.dumps(products)))
-                conn.commit()
+            images_to_process.append((img_hash, filename, content_type, img_bytes))
+            tasks.append(extract_from_image_via_llm(img_bytes, content_type, api_key, llm_model))
             
-        all_products.extend(products)
+    # 3. Request LLM extractions concurrently if any
+    if tasks:
+        results = await asyncio.gather(*tasks)
+        for (img_hash, filename, content_type, img_bytes), (products, err) in zip(images_to_process, results):
+            if err:
+                warnings.append(f"Imagem ({filename}): falha na extração via IA — {err}")
+            if products:
+                c.execute("INSERT OR REPLACE INTO image_cache (hash, json_data) VALUES (?, ?)", (img_hash, json.dumps(products)))
+                all_products.extend(products)
+        conn.commit()
         
     # ---- Manual mappings from SQLite ----
     c.execute("SELECT codigo, price, m2 FROM manual_mapping")
