@@ -86,6 +86,38 @@ def set_price_cell(ws, row, col, value):
     cell.number_format = '#,##0.00" "[$R$-pt-BR]'
 
 
+def find_dimension_for_row(ws, row):
+    for r in range(row, 0, -1):
+        val = str(ws.cell(row=r, column=1).value or "").strip().upper()
+        dim = extract_dim_from_header(val)
+        if dim is not None:
+            return dim
+    return None
+
+
+def get_fracionado_adicional(dim_key: str) -> float:
+    if not dim_key:
+        return 2.0  # default
+    m = re.findall(r'\d+', dim_key)
+    if len(m) >= 2:
+        d1, d2 = int(m[0]), int(m[1])
+        if (d1 == 56 and d2 == 113) or (d1 == 113 and d2 == 56):
+            return 4.0
+        elif max(d1, d2) <= 58:
+            return 2.0
+        else:
+            return 3.0
+    return 2.0
+
+
+def fill_price_and_fracionado(ws, row, price, dim_key=None):
+    set_price_cell(ws, row, 2, price)
+    if dim_key is None:
+        dim_key = find_dimension_for_row(ws, row)
+    adicional = get_fracionado_adicional(dim_key)
+    set_price_cell(ws, row, 3, price + adicional)
+
+
 def get_fallback_candidate(opts):
     """Choose the best default candidate from the PDF candidates.
     Prefer standard pieces over special ones, and prefer candidates with a blank variant (pure size).
@@ -430,7 +462,7 @@ async def process_files(
 
         # ---------- Try manual mapping first ----------
         if num_code in manual_mappings:
-            set_price_cell(ws, r, 2, manual_mappings[num_code]["price"])
+            fill_price_and_fracionado(ws, r, manual_mappings[num_code]["price"], current_dim)
             if manual_mappings[num_code]["m2"]:
                 ws.cell(row=r, column=9, value=manual_mappings[num_code]["m2"])
             success_count += 1
@@ -441,7 +473,7 @@ async def process_files(
         if not prod_info:
             # No image data for this code
             if len(current_opts) == 1:
-                set_price_cell(ws, r, 2, current_opts[0]["price"])
+                fill_price_and_fracionado(ws, r, current_opts[0]["price"], current_dim)
                 if current_opts[0]["m2"]:
                     ws.cell(row=r, column=9, value=current_opts[0]["m2"])
                 success_count += 1
@@ -449,7 +481,7 @@ async def process_files(
                 # Use our fallback logic to get the base size price (e.g. 12,70 for 32x58)
                 chosen_opt = get_fallback_candidate(current_opts)
                 if chosen_opt:
-                    set_price_cell(ws, r, 2, chosen_opt["price"])
+                    fill_price_and_fracionado(ws, r, chosen_opt["price"], current_dim)
                     if chosen_opt["m2"]:
                         ws.cell(row=r, column=9, value=chosen_opt["m2"])
                     success_count += 1
@@ -470,12 +502,12 @@ async def process_files(
                 matched_opts.append(opt)
         
         if len(matched_opts) == 1:
-            set_price_cell(ws, r, 2, matched_opts[0]["price"])
+            fill_price_and_fracionado(ws, r, matched_opts[0]["price"], current_dim)
             if matched_opts[0]["m2"]:
                 ws.cell(row=r, column=9, value=matched_opts[0]["m2"])
             success_count += 1
         elif len(matched_opts) == 0 and len(current_opts) == 1:
-            set_price_cell(ws, r, 2, current_opts[0]["price"])
+            fill_price_and_fracionado(ws, r, current_opts[0]["price"], current_dim)
             if current_opts[0]["m2"]:
                 ws.cell(row=r, column=9, value=current_opts[0]["m2"])
             success_count += 1
@@ -484,7 +516,7 @@ async def process_files(
             opts_to_use = matched_opts if matched_opts else current_opts
             chosen_opt = get_fallback_candidate(opts_to_use)
             if chosen_opt:
-                set_price_cell(ws, r, 2, chosen_opt["price"])
+                fill_price_and_fracionado(ws, r, chosen_opt["price"], current_dim)
                 if chosen_opt["m2"]:
                     ws.cell(row=r, column=9, value=chosen_opt["m2"])
                 success_count += 1
@@ -562,7 +594,7 @@ async def resolve_ambiguities(req: ResolveRequest):
     ws = wb.active
     
     for res in req.resolutions:
-        set_price_cell(ws, res.row, 2, res.price)
+        fill_price_and_fracionado(ws, res.row, res.price, None)
         if res.m2:
             ws.cell(row=res.row, column=9, value=res.m2)
             
