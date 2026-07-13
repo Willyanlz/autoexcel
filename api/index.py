@@ -90,34 +90,37 @@ def extract_products_ocr(image_bytes: bytes):
     if not result:
         return []
 
-    # Calculate center Y and min X for each item
+    # Calculate center Y, min X, and height for each item
     items = []
     for box, text, score in result:
         y_center = sum(pt[1] for pt in box) / 4.0
         x_min = min(pt[0] for pt in box)
-        items.append({"text": text, "y": y_center, "x": x_min})
+        h = max(pt[1] for pt in box) - min(pt[1] for pt in box)
+        items.append({"text": text, "y": y_center, "x": x_min, "h": h})
         
     # Sort by Y first
     items.sort(key=lambda item: item["y"])
     
-    # Group by Y with tolerance
+    # Group by Y with dynamic tolerance
     lines_reconstructed = []
     current_line = []
     current_y = None
-    tolerance = 15 # pixels
     
     for item in items:
         if current_y is None:
             current_y = item["y"]
             current_line.append(item)
-        elif abs(item["y"] - current_y) < tolerance:
-            current_line.append(item)
-            current_y = sum(i["y"] for i in current_line) / len(current_line)
         else:
-            current_line.sort(key=lambda i: i["x"])
-            lines_reconstructed.append(" ".join(i["text"] for i in current_line))
-            current_line = [item]
-            current_y = item["y"]
+            # Tolerance is 40% of the box's height, prevents merging different lines
+            tolerance = max(item["h"] * 0.4, 4)
+            if abs(item["y"] - current_y) < tolerance:
+                current_line.append(item)
+                current_y = sum(i["y"] for i in current_line) / len(current_line)
+            else:
+                current_line.sort(key=lambda i: i["x"])
+                lines_reconstructed.append(" ".join(i["text"] for i in current_line))
+                current_line = [item]
+                current_y = item["y"]
             
     if current_line:
         current_line.sort(key=lambda i: i["x"])
