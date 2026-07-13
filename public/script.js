@@ -161,11 +161,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         setStatus('Carregando imagens e cache...');
 
-        const cachedProducts = [];
+        const allExtractedProducts = [];
         const uncachedImages = [];
-        const imageMetadata = {}; // map filename to its cache key
+        const imageMetadata = {}; // map file object to cache key
 
-        // 1. Process files, check client-side cache and resize if uncached
+        // 1. Process files, check client-side cache
         for (let i = 0; i < imgInput.files.length; i++) {
             const file = imgInput.files[i];
             const cacheKey = `autoexcel_img_${file.name}_${file.size}_${file.lastModified}`;
@@ -175,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (cachedData) {
                 try {
                     const parsed = JSON.parse(cachedData);
-                    cachedProducts.push(...parsed);
+                    allExtractedProducts.push(...parsed);
                 } catch {
                     localStorage.removeItem(cacheKey);
                     uncachedImages.push(file);
@@ -185,34 +185,63 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // 2. Resize uncached images on the fly
-        const resizedImages = [];
-        if (uncachedImages.length > 0) {
-            setStatus(`Otimizando ${uncachedImages.length} imagem(ns)...`);
-            for (const imgFile of uncachedImages) {
-                const resized = await resizeImage(imgFile);
-                resizedImages.push(resized);
-            }
-        }
-
-        setStatus('Processando planilha e IA...');
-
-        const formData = new FormData();
-        formData.append('pdf', pdfInput.files[0]);
-        formData.append('excel', excelInput.files[0]);
-        formData.append('cached_products_json', JSON.stringify(cachedProducts));
-
-        for (const img of resizedImages) {
-            formData.append('images', img);
-        }
-        
-        // Append API settings
+        // 2. Process uncached images ONE BY ONE to prevent Vercel timeouts
         const apiKey = localStorage.getItem('autoexcel_api_key') || '';
         const model = localStorage.getItem('autoexcel_model') || 'google/gemini-2.5-flash';
-        formData.append('api_key', apiKey);
-        formData.append('llm_model', model);
 
         try {
+            if (uncachedImages.length > 0) {
+                for (let idx = 0; idx < uncachedImages.length; idx++) {
+                    const imgFile = uncachedImages[idx];
+                    setStatus(`Otimizando imagem ${idx + 1} de ${uncachedImages.length}...`);
+                    
+                    const resized = await resizeImage(imgFile);
+                    
+                    setStatus(`Analisando imagem ${idx + 1} de ${uncachedImages.length} com IA...`);
+
+                    const imgFormData = new FormData();
+                    imgFormData.append('image', resized);
+                    imgFormData.append('api_key', apiKey);
+                    imgFormData.append('llm_model', model);
+
+                    const imgResponse = await fetch('/api/extract-image', {
+                        method: 'POST',
+                        body: imgFormData
+                    });
+
+                    if (!imgResponse.ok) {
+                        let imgErrDetail = '';
+                        try {
+                            const errJson = await imgResponse.json();
+                            imgErrDetail = errJson.error || JSON.stringify(errJson);
+                        } catch {
+                            imgErrDetail = await imgResponse.text();
+                            if (imgErrDetail.includes('<html') || imgErrDetail.includes('<!DOCTYPE')) {
+                                imgErrDetail = `Erro na extração da imagem ${imgFile.name}. Possível falha na API da IA.`;
+                            }
+                        }
+                        throw new Error(`Imagem (${imgFile.name}): ${imgErrDetail}`);
+                    }
+
+                    const imgData = await imgResponse.json();
+                    if (imgData.products) {
+                        allExtractedProducts.push(...imgData.products);
+                        // Save to client-side localStorage cache
+                        const cacheKey = imageMetadata[imgFile.name];
+                        if (cacheKey) {
+                            localStorage.setItem(cacheKey, JSON.stringify(imgData.products));
+                        }
+                    }
+                }
+            }
+
+            setStatus('Gerando planilha Excel...');
+
+            const formData = new FormData();
+            formData.append('pdf', pdfInput.files[0]);
+            formData.append('excel', excelInput.files[0]);
+            formData.append('image_products_json', JSON.stringify(allExtractedProducts));
+
             const response = await fetch('/api/process', {
                 method: 'POST',
                 body: formData
@@ -225,25 +254,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     errDetail = errJson.error || errJson.detail || JSON.stringify(errJson);
                 } catch {
                     errDetail = await response.text();
-                    // Strip HTML if Vercel returned a generic error page
                     if (errDetail.includes('<html') || errDetail.includes('<!DOCTYPE')) {
-                        errDetail = `Erro do servidor (${response.status}). Possível timeout ou falha na API da IA.`;
+                        errDetail = `Erro do servidor (${response.status}) ao processar a planilha.`;
                     }
                 }
                 throw new Error(errDetail);
             }
 
             const data = await response.json();
-
-            // Store new extractions in local storage cache
-            if (data.new_extracted_products && data.new_extracted_products.length > 0) {
-                data.new_extracted_products.forEach(item => {
-                    const cacheKey = imageMetadata[item.filename];
-                    if (cacheKey && item.products) {
-                        localStorage.setItem(cacheKey, JSON.stringify(item.products));
-                    }
-                });
-            }
             
             if (data.pending_count > 0) {
                 // Show resolution UI
@@ -307,7 +325,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
         } catch (error) {
-            errorMsg.textContent = 'Erro na API: ' + error.message;
+            errorMsg.textContent = 'Erro: ' + error.message;
         } finally {
             submitBtn.classList.remove('loading');
             submitBtn.disabled = false;

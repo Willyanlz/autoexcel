@@ -249,6 +249,32 @@ def parse_pdf(pdf_bytes):
                 })
     return candidates_by_dim
 
+# ---------------------------------------------------------------------------
+# Image Extraction Endpoint
+# ---------------------------------------------------------------------------
+
+@app.post("/api/extract-image")
+async def extract_image(
+    image: UploadFile = File(...),
+    api_key: str = Form(""),
+    llm_model: str = Form("")
+):
+    try:
+        img_bytes = await image.read()
+        if not img_bytes:
+            return JSONResponse(status_code=400, content={"error": "Imagem vazia"})
+        
+        products, err = await extract_from_image_via_llm(img_bytes, image.content_type, api_key, llm_model)
+        if err:
+            return JSONResponse(status_code=500, content={"error": err})
+            
+        return {"products": products}
+    except Exception as e:
+        import traceback
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "detail": traceback.format_exc()}
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -259,10 +285,7 @@ def parse_pdf(pdf_bytes):
 async def process_files(
     pdf: UploadFile = File(...), 
     excel: UploadFile = File(None),
-    images: List[UploadFile] = File([]),
-    cached_products_json: str = Form("[]"),
-    api_key: str = Form(""),
-    llm_model: str = Form("")
+    image_products_json: str = Form("[]")
 ):
   try:
     pdf_bytes = await pdf.read()
@@ -271,35 +294,12 @@ async def process_files(
     # ---- Collect warnings for the frontend ----
     warnings = []
 
-    # ---- Load cached products from frontend ----
+    # ---- Load products list extracted from frontend ----
     try:
-        all_products = json.loads(cached_products_json)
+        all_products = json.loads(image_products_json)
     except Exception as e:
         all_products = []
-        warnings.append(f"Erro ao decodificar produtos cacheados: {e}")
-
-    # ---- Process newly uploaded images ----
-    new_extracted_products = []
-    if images:
-        tasks = []
-        for img in images:
-            img_bytes = await img.read()
-            if not img_bytes:
-                continue
-            tasks.append((img.filename, img.content_type, extract_from_image_via_llm(img_bytes, img.content_type, api_key, llm_model)))
-
-        if tasks:
-            filenames, content_types, extraction_futures = zip(*tasks)
-            results = await asyncio.gather(*extraction_futures)
-            for filename, (products, err) in zip(filenames, results):
-                if err:
-                    warnings.append(f"Imagem ({filename}): falha na extração via IA — {err}")
-                if products:
-                    all_products.extend(products)
-                    new_extracted_products.append({
-                        "filename": filename,
-                        "products": products
-                    })
+        warnings.append(f"Erro ao decodificar produtos das imagens: {e}")
 
     # ---- Manual mappings from SQLite ----
     conn = sqlite3.connect(DB_PATH)
@@ -546,7 +546,6 @@ async def process_files(
         "total_codes": total_codes_found,
         "pdf_dimensions": len(candidates_by_dim),
         "image_products": len(all_products),
-        "new_extracted_products": new_extracted_products,
         "ambiguous": ambiguous,
         "warnings": warnings,
         "excel_base64": b64_excel
