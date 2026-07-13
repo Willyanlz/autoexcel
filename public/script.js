@@ -93,7 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function checkFormValidity() {
-        if (pdfInput.files.length > 0 && imgInput.files.length > 0 && excelInput.files.length > 0) {
+        if (pdfInput.files.length > 0 && excelInput.files.length > 0) {
             submitBtn.disabled = false;
         } else {
             submitBtn.disabled = true;
@@ -107,7 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         
-        if (!pdfInput.files.length || !imgInput.files.length || !excelInput.files.length) return;
+        if (!pdfInput.files.length || !excelInput.files.length) return;
 
         submitBtn.classList.add('loading');
         submitBtn.disabled = true;

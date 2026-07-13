@@ -308,14 +308,16 @@ async def process_files(
             if len(current_opts) == 1:
                 set_price_cell(ws, r, 2, current_opts[0]["price"])
                 success_count += 1
-            elif len(current_opts) > 1:
-                ambiguous.append({
-                    "row": r,
-                    "codigo": cell_val,
-                    "nome": "NOME DESCONHECIDO (Envie imagem)",
-                    "opcoes": current_opts
-                })
-                pending_count += 1
+            else:
+                # Multiple options in PDF or zero options, set to "PREENCHA"
+                ws.cell(row=r, column=2, value="PREENCHA")
+                if len(current_opts) > 1:
+                    ambiguous.append({
+                        "row": r,
+                        "codigo": cell_val,
+                        "nome": "NOME DESCONHECIDO (Envie imagem)",
+                        "opcoes": current_opts
+                    })
             continue
         
         tag = str(prod_info.get("tag_variante", "")).upper()
@@ -335,13 +337,14 @@ async def process_files(
             set_price_cell(ws, r, 2, current_opts[0]["price"])
             success_count += 1
         else:
+            # Ambiguity or no match, set to "PREENCHA"
+            ws.cell(row=r, column=2, value="PREENCHA")
             ambiguous.append({
                 "row": r,
                 "codigo": cell_val,
                 "nome": prod_info.get("nome_produto"),
                 "opcoes": current_opts if len(matched_opts) == 0 else matched_opts
             })
-            pending_count += 1
 
     # ---- Add diagnostic warnings ----
     if total_codes_found == 0:
@@ -350,6 +353,8 @@ async def process_files(
         warnings.append("Nenhum produto encontrado no PDF. Verifique se o PDF contém tabela de preços com dimensões e valores R$.")
     if images and not all_products:
         warnings.append("Nenhum produto extraído das imagens. Verifique se o modelo de IA suporta visão (imagens). Modelos recomendados: google/gemini-2.5-flash, openai/gpt-4o-mini.")
+    if len(ambiguous) > 0:
+        warnings.append(f"Existem {len(ambiguous)} itens com preços não encontrados ou ambíguos. Eles foram marcados como 'PREENCHA' na planilha para você completar manualmente.")
 
     # ---- Serialize workbook ----
     out = io.BytesIO()
@@ -360,7 +365,7 @@ async def process_files(
     return JSONResponse(content={
         "success": True,
         "success_count": success_count,
-        "pending_count": pending_count,
+        "pending_count": 0,  # Always 0 to allow direct download without resolution UI
         "total_codes": total_codes_found,
         "pdf_dimensions": len(candidates_by_dim),
         "image_products": len(all_products),
