@@ -362,26 +362,55 @@ async def process_files(
         if count == 0:
             continue
 
-        # Read physical properties from the first row after header (template row)
+        # Read physical properties and style objects from the first row after header (template row)
         phys = {}
-        for col in range(3, min(ws.max_column + 1, 20)):
-            v = ws.cell(row=insert_at, column=col).value
-            if v is not None:
-                phys[col] = v
+        styles = {}
+        from copy import copy
+        for col in range(1, min(ws.max_column + 1, 20)):
+            cell = ws.cell(row=insert_at, column=col)
+            if col >= 3 and cell.value is not None:
+                phys[col] = cell.value
+            
+            # Copy all cell styling attributes
+            styles[col] = {
+                "font": copy(cell.font) if cell.font else None,
+                "fill": copy(cell.fill) if cell.fill else None,
+                "border": copy(cell.border) if cell.border else None,
+                "alignment": copy(cell.alignment) if cell.alignment else None,
+                "number_format": cell.number_format
+            }
 
         # First product reuses the existing row; insert additional rows below it
         if count > 1:
             ws.insert_rows(insert_at + 1, count - 1)
 
-        # Write product codes into the rows
+        # Write product codes and apply styles into the rows
+        row_height = ws.row_dimensions[insert_at].height
         for idx, prod in enumerate(prods):
             r = insert_at + idx
+            
+            # Copy row height
+            if row_height is not None:
+                ws.row_dimensions[r].height = row_height
+                
             code = prod.get("codigo", "")
             ws.cell(row=r, column=1, value=code)
-            # Copy physical properties to newly inserted rows
+            
+            # Copy physical properties (values) to newly inserted rows
             if idx > 0:
                 for col, v in phys.items():
                     ws.cell(row=r, column=col, value=v)
+                    
+            # Apply styles to all cells in the current row
+            for col in range(1, min(ws.max_column + 1, 20)):
+                dst_cell = ws.cell(row=r, column=col)
+                style = styles.get(col)
+                if style:
+                    if style["font"]: dst_cell.font = style["font"]
+                    if style["fill"]: dst_cell.fill = style["fill"]
+                    if style["border"]: dst_cell.border = style["border"]
+                    if style["alignment"]: dst_cell.alignment = style["alignment"]
+                    if style["number_format"]: dst_cell.number_format = style["number_format"]
 
     # ---- Iterate rows and fill data (prices from PDF) ----
     current_dim = None
