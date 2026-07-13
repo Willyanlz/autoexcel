@@ -24,3 +24,6 @@ A interface estará disponível em `http://127.0.0.1:8000`
 Esse sistema foi reestruturado para ser 100% compatível com a arquitetura serverless da Vercel (sem IA demorada e sem banco de dados SQLite volátil).
 Basta realizar o push para a branch `master` e a Vercel fará o deploy automático em 2-3 segundos.
 O comando executado pela Vercel é: `pip install -r requirements.txt` e o run é `uvicorn api.index:app`.
+
+
+ alterado versao web
