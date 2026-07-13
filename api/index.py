@@ -22,11 +22,13 @@ def get_ocr_engine():
     return _ocr_engine
 
 OCR_AVAILABLE = False
+OCR_IMPORT_ERROR = ""
 try:
-    from rapidocr_onnxruntime import RapidOCR as _rocr_check
+    import rapidocr_onnxruntime
     OCR_AVAILABLE = True
-except ImportError:
-    pass
+except Exception as e:
+    import traceback
+    OCR_IMPORT_ERROR = str(e) + "\n" + traceback.format_exc()
 
 app = FastAPI()
 
@@ -266,7 +268,7 @@ async def analyze(
                     ocr_products.extend(prods)
                 elif mode == "ocr":
                     if not OCR_AVAILABLE:
-                        ocr_errors.append("OCR simples não disponível. Instale: pip install rapidocr-onnxruntime")
+                        ocr_errors.append(f"OCR simples indisponível. Erro interno: {OCR_IMPORT_ERROR[:200]}...")
                         continue
                     try:
                         prods = extract_products_ocr(img_bytes)
