@@ -1,0 +1,8 @@
+pandas
+openpyxl
+pdfplumber
+fastapi
+python-multipart
+uvicorn
+openai
+python-dotenv

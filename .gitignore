@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Environment
+.env
+
+# SQLite database (generated at runtime)
+mapping_images.db
+
+# Test/debug files
+*.test.*
+debug_*.py
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Sample data (don't ship to git)
+*.pdf
+*.jpg
+*.jpeg
+*.png
+*.xlsx

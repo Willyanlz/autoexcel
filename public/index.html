@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoExcel V2 | PDF + Imagens -> Excel</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <main class="container glass-panel" id="mainContainer">
+        <header style="position: relative;">
+            <button id="settingsBtn" class="icon-btn" title="Configurações">⚙️</button>
+            <h1>AutoExcel V2</h1>
+            <p>Extração avançada via PDF e Inteligência Artificial</p>
+        </header>
+
+        <form id="uploadForm">
+            <div class="drop-zone" id="pdfZone">
+                <div class="icon">📄</div>
+                <h3>Arraste o PDF de Preços aqui</h3>
+                <input type="file" id="pdfInput" accept=".pdf" required hidden>
+                <div class="file-name" id="pdfName">Nenhum arquivo selecionado</div>
+            </div>
+
+            <div class="drop-zone" id="imgZone">
+                <div class="icon">🖼️</div>
+                <h3>Arraste as Imagens dos Produtos</h3>
+                <p>Envie JPG/PNG com as tabelas de tamanho</p>
+                <input type="file" id="imgInput" accept="image/*" multiple required hidden>
+                <div class="file-name" id="imgName">Nenhuma imagem selecionada</div>
+            </div>
+
+            <div class="drop-zone" id="excelZone">
+                <div class="icon">📊</div>
+                <h3>Arraste a Planilha com Códigos</h3>
+                <p>Excel (.xlsx) com códigos de produto na coluna A</p>
+                <input type="file" id="excelInput" accept=".xlsx" required hidden>
+                <div class="file-name" id="excelName">Nenhum arquivo selecionado</div>
+            </div>
+
+            <button type="submit" id="submitBtn" disabled>
+                <span>Processar e Cruzar Dados</span>
+                <div class="loader"></div>
+            </button>
+        </form>
+        
+        <div id="errorMsg" class="error-msg"></div>
+    </main>
+
+    <main class="container glass-panel" id="resolveContainer" style="display: none; max-width: 800px;">
+        <header>
+            <h1>Revisão Necessária</h1>
+            <p id="resolveStats">Encontramos X pendências.</p>
+        </header>
+        <div class="table-container">
+            <table id="resolveTable">
+                <thead>
+                    <tr>
+                        <th>Código</th>
+                        <th>Produto</th>
+                        <th>Variante Correta (PDF)</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <button id="resolveBtn" style="margin-top: 20px;">Confirmar e Baixar Excel</button>
+    </main>
+
+    <div class="modal-overlay" id="settingsModal" style="display: none;">
+        <div class="modal-content glass-panel">
+            <div class="modal-header">
+                <h2>Configurações da IA</h2>
+                <button class="close-btn" id="closeSettings">×</button>
+            </div>
+            <div class="form-group">
+                <label for="apiKey">OpenRouter API Key</label>
+                <input type="password" id="apiKey" placeholder="sk-or-v1-..." autocomplete="off">
+                <small>Sua chave de acesso ao OpenRouter (gratuita ou paga).</small>
+            </div>
+            <div class="form-group">
+                <label for="llmModel">Modelo (LLM)</label>
+                <input type="text" id="llmModel" placeholder="Ex: google/gemini-2.5-flash" value="google/gemini-2.5-flash">
+                <small>Modelos gratuitos sugeridos: google/gemini-2.5-flash, openai/gpt-4o-mini</small>
+            </div>
+            <button id="saveSettingsBtn">Salvar Configurações</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
