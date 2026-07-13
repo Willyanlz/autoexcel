@@ -10,27 +10,17 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- Sidebar -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <div class="logo">
-                    <i class="fas fa-file-excel"></i>
-                    <h2>AutoExcel</h2>
-                </div>
+                <div class="logo"><i class="fas fa-file-excel"></i><h2>AutoExcel</h2></div>
                 <p class="subtitle">Mapeamento Rápido</p>
             </div>
             <nav class="sidebar-nav">
-                <a href="#" class="nav-item active">
-                    <i class="fas fa-magic"></i>
-                    <span>Preencher</span>
-                </a>
+                <a href="#" class="nav-item active"><i class="fas fa-magic"></i><span>Preencher</span></a>
             </nav>
-            <div class="sidebar-footer">
-                <p>Versão Local Rápida</p>
-            </div>
+            <div class="sidebar-footer"><p>v2.1 — Manual + OCR + IA</p></div>
         </aside>
 
-        <!-- Main Content -->
         <main class="main-content">
             <header class="topbar">
                 <div class="page-title">
@@ -41,78 +31,104 @@
 
             <div class="content-area">
                 <div class="glass-card">
-                    
-                    <!-- STEP 1: Upload Excel -->
+
+                    <!-- ====== STEP 1 ====== -->
                     <div id="step-1">
                         <div class="card-header">
-                            <div class="header-icon">
-                                <i class="fas fa-file-excel"></i>
-                            </div>
-                            <div>
-                                <h2>Passo 1: Enviar Planilha</h2>
-                                <p>Selecione a planilha Excel base (.xlsx)</p>
-                            </div>
+                            <div class="header-icon"><i class="fas fa-file-excel"></i></div>
+                            <div><h2>Passo 1: Enviar Arquivos</h2><p>Envie a planilha e, se quiser, imagens com códigos de produto</p></div>
                         </div>
-
                         <div class="card-body">
                             <form id="uploadForm">
+                                <!-- Excel -->
+                                <label class="field-label"><i class="fas fa-table"></i> Planilha Excel (.xlsx) — Obrigatório</label>
                                 <div class="upload-area" id="dropZoneExcel">
-                                    <input type="file" id="excelFile" name="excel" accept=".xlsx" required hidden>
+                                    <input type="file" id="excelFile" accept=".xlsx" required hidden>
                                     <div class="upload-content">
-                                        <div class="upload-icon-circle">
-                                            <i class="fas fa-cloud-upload-alt"></i>
-                                        </div>
-                                        <h3>Arraste a Planilha Excel aqui</h3>
-                                        <p>ou clique para selecionar o arquivo</p>
-                                        <span class="file-name" id="excelFileName">Nenhum arquivo selecionado</span>
+                                        <div class="upload-icon-circle"><i class="fas fa-cloud-upload-alt"></i></div>
+                                        <h3>Arraste a Planilha aqui</h3>
+                                        <p>ou clique para selecionar</p>
+                                        <span class="file-name" id="excelFileName">Nenhum arquivo</span>
                                     </div>
                                 </div>
+
+                                <!-- Images -->
+                                <label class="field-label mt-24"><i class="fas fa-images"></i> Imagens com Códigos — Opcional</label>
+                                <div class="tip-box">
+                                    <i class="fas fa-lightbulb"></i>
+                                    <div><strong>Dica:</strong> Envie fotos/prints de boa qualidade onde o <strong>Tipo/Tamanho</strong> e o <strong>Código do Produto</strong> estejam legíveis. O sistema lê automaticamente os códigos e encaixa nos formatos.</div>
+                                </div>
+                                <div class="upload-area upload-area-sm" id="dropZoneImages">
+                                    <input type="file" id="imageFiles" accept="image/*" multiple hidden>
+                                    <div class="upload-content">
+                                        <div class="upload-icon-circle small"><i class="fas fa-camera"></i></div>
+                                        <h3>Arraste as Imagens aqui</h3>
+                                        <p>Pode selecionar várias</p>
+                                        <span class="file-name" id="imageFileNames">Nenhuma imagem</span>
+                                    </div>
+                                </div>
+
+                                <!-- OCR Mode Toggle -->
+                                <div id="ocrModeSection" style="display:none;">
+                                    <label class="field-label mt-24"><i class="fas fa-cog"></i> Como ler as imagens?</label>
+                                    <div class="toggle-container">
+                                        <button type="button" class="toggle-btn active" data-mode="ocr" id="btnModeOcr">
+                                            <i class="fas fa-eye"></i> OCR Simples <span class="toggle-sub">(sem internet)</span>
+                                        </button>
+                                        <button type="button" class="toggle-btn" data-mode="ai" id="btnModeAi">
+                                            <i class="fas fa-robot"></i> IA Avançada <span class="toggle-sub">(OpenRouter)</span>
+                                        </button>
+                                    </div>
+
+                                    <!-- AI Settings (hidden by default) -->
+                                    <div id="aiSettings" class="ai-settings" style="display:none;">
+                                        <div class="settings-row">
+                                            <div class="setting-field">
+                                                <label>API Key</label>
+                                                <div class="input-group full-width">
+                                                    <span class="input-prefix"><i class="fas fa-key"></i></span>
+                                                    <input type="password" id="apiKeyInput" placeholder="sk-or-..." class="full-input">
+                                                </div>
+                                            </div>
+                                            <div class="setting-field">
+                                                <label>Modelo</label>
+                                                <div class="input-group full-width">
+                                                    <span class="input-prefix"><i class="fas fa-brain"></i></span>
+                                                    <input type="text" id="modelInput" placeholder="google/gemini-2.5-flash" class="full-input">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div class="form-actions">
-                                    <button type="submit" class="btn-primary" id="btnExtract">
-                                        <i class="fas fa-search"></i>
-                                        <span>Ler Formatos da Planilha</span>
+                                    <button type="submit" class="btn-primary" id="btnAnalyze">
+                                        <i class="fas fa-search"></i><span>Analisar Tudo</span>
                                     </button>
                                 </div>
                             </form>
                         </div>
                     </div>
 
-                    <!-- STEP 2: Map Prices -->
-                    <div id="step-2" style="display: none;">
+                    <!-- ====== STEP 2 ====== -->
+                    <div id="step-2" style="display:none;">
                         <div class="card-header">
-                            <div class="header-icon" style="background: var(--success);">
-                                <i class="fas fa-tags"></i>
-                            </div>
-                            <div>
-                                <h2>Passo 2: Definir Preços</h2>
-                                <p>O sistema encontrou os seguintes formatos na sua planilha. Defina o preço base e o acréscimo para o fracionado.</p>
-                            </div>
+                            <div class="header-icon" style="background:var(--success);"><i class="fas fa-tags"></i></div>
+                            <div><h2>Passo 2: Preços e Códigos</h2><p>Edite formatos, códigos e defina preços (tudo opcional)</p></div>
                         </div>
-
                         <div class="card-body">
-                            <div class="table-container">
-                                <table class="resolution-table" id="formatsTable">
-                                    <thead>
-                                        <tr>
-                                            <th>Formato (Encontrado na Planilha)</th>
-                                            <th>Preço Base (R$)</th>
-                                            <th>Acréscimo Fracionado (R$)</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="formatsTableBody">
-                                        <!-- Injetado via JS -->
-                                    </tbody>
-                                </table>
+                            <!-- Add Format Button -->
+                            <div class="add-format-bar">
+                                <button type="button" class="btn-add-format" id="btnAddFormat">
+                                    <i class="fas fa-plus-circle"></i> Adicionar Novo Formato
+                                </button>
                             </div>
-                            <div class="form-actions" style="margin-top: 24px; display: flex; justify-content: space-between;">
-                                <button type="button" class="btn-secondary" id="btnBack">
-                                    <i class="fas fa-arrow-left"></i>
-                                    <span>Voltar</span>
-                                </button>
-                                <button type="button" class="btn-primary" id="btnProcess">
-                                    <i class="fas fa-magic"></i>
-                                    <span>Gerar Planilha Final</span>
-                                </button>
+
+                            <div id="formatsContainer"></div>
+
+                            <div class="form-actions mt-24" style="display:flex; justify-content:space-between;">
+                                <button type="button" class="btn-secondary" id="btnBack"><i class="fas fa-arrow-left"></i><span>Voltar</span></button>
+                                <button type="button" class="btn-primary" id="btnProcess"><i class="fas fa-magic"></i><span>Gerar Planilha Final</span></button>
                             </div>
                         </div>
                     </div>
@@ -122,27 +138,25 @@
         </main>
     </div>
 
-    <!-- Loading Overlay -->
+    <!-- Loading -->
     <div class="loading-overlay" id="loadingOverlay">
         <div class="loader-content">
             <div class="spinner"></div>
             <h3 id="loadingText">Processando...</h3>
-            <p>Isso levará apenas alguns segundos.</p>
+            <p id="loadingSubtext">Alguns segundos...</p>
         </div>
     </div>
 
-    <!-- Error Toast -->
+    <!-- Toasts -->
     <div class="toast error" id="errorToast">
-        <div class="toast-icon">
-            <i class="fas fa-exclamation-circle"></i>
-        </div>
-        <div class="toast-content">
-            <h4>Erro</h4>
-            <p id="errorMsg">Mensagem de erro</p>
-        </div>
-        <button class="toast-close" onclick="closeToast('errorToast')">
-            <i class="fas fa-times"></i>
-        </button>
+        <div class="toast-icon"><i class="fas fa-exclamation-circle"></i></div>
+        <div class="toast-content"><h4>Erro</h4><p id="errorMsg"></p></div>
+        <button class="toast-close" onclick="closeToast('errorToast')"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="toast success" id="successToast">
+        <div class="toast-icon"><i class="fas fa-check-circle"></i></div>
+        <div class="toast-content"><h4>Sucesso</h4><p id="successMsg"></p></div>
+        <button class="toast-close" onclick="closeToast('successToast')"><i class="fas fa-times"></i></button>
     </div>
 
     <script src="/script.js"></script>
