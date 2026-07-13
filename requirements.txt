@@ -1,5 +1,4 @@
 fastapi
 python-multipart
-uvicorn
 openpyxl
 rapidocr-onnxruntime

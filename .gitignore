@@ -10,6 +10,11 @@ __pycache__/
 # SQLite database (generated at runtime)
 mapping_images.db
 
+# PyInstaller
+build/
+dist/
+*.spec
+
 # Test/debug files
 *.test.*
 debug_*.py
