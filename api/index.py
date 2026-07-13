@@ -298,6 +298,8 @@ async def process_files(
         # ---------- Try manual mapping first ----------
         if num_code in manual_mappings:
             set_price_cell(ws, r, 2, manual_mappings[num_code]["price"])
+            if manual_mappings[num_code]["m2"]:
+                ws.cell(row=r, column=9, value=manual_mappings[num_code]["m2"])
             success_count += 1
             continue
         
@@ -307,6 +309,8 @@ async def process_files(
             # No image data for this code
             if len(current_opts) == 1:
                 set_price_cell(ws, r, 2, current_opts[0]["price"])
+                if current_opts[0]["m2"]:
+                    ws.cell(row=r, column=9, value=current_opts[0]["m2"])
                 success_count += 1
             else:
                 # Multiple options in PDF or zero options, set to "PREENCHA"
@@ -332,9 +336,13 @@ async def process_files(
         
         if len(matched_opts) == 1:
             set_price_cell(ws, r, 2, matched_opts[0]["price"])
+            if matched_opts[0]["m2"]:
+                ws.cell(row=r, column=9, value=matched_opts[0]["m2"])
             success_count += 1
         elif len(matched_opts) == 0 and len(current_opts) == 1:
             set_price_cell(ws, r, 2, current_opts[0]["price"])
+            if current_opts[0]["m2"]:
+                ws.cell(row=r, column=9, value=current_opts[0]["m2"])
             success_count += 1
         else:
             # Ambiguity or no match, set to "PREENCHA"
@@ -407,6 +415,8 @@ async def resolve_ambiguities(req: ResolveRequest):
     
     for res in req.resolutions:
         set_price_cell(ws, res.row, 2, res.price)
+        if res.m2:
+            ws.cell(row=res.row, column=9, value=res.m2)
             
     out = io.BytesIO()
     wb.save(out)
