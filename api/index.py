@@ -153,7 +153,12 @@ def parse_pdf(pdf_bytes):
             text = page.extract_text()
             if not text:
                 continue
+            is_especial = False
             for line in text.split('\n'):
+                line_upper = line.upper()
+                if "PEÇAS ESPECIAIS" in line_upper or "PEAS ESPECIAIS" in line_upper or "PECAS ESPECIAIS" in line_upper:
+                    is_especial = True
+                
                 match = re.search(
                     r'([\wÀ-ú\s\(\)\-\.]*?)'     # variant prefix (may be empty)
                     r'(\d{2,3})\s*[xX]\s*(\d{2,3})'  # dimensions
@@ -172,12 +177,15 @@ def parse_pdf(pdf_bytes):
                     dim_key = f"{int(dim1)}x{int(dim2)}"
                     desc = f"{variant_raw} {dim_key}".strip()
                     
+                    is_item_especial = is_especial or any(x in line_upper for x in ["RELEVO", "RODAPE", "RODAPÉ", "DEGRAU", "ESPECIAL"])
+                    
                     candidates_by_dim.setdefault(dim_key, []).append({
                         "desc": desc, 
                         "price": price, 
                         "dim": dim_key, 
                         "variant_raw": variant_raw.upper(),
-                        "m2": m2
+                        "m2": m2,
+                        "is_especial": is_item_especial
                     })
     return candidates_by_dim
 
@@ -312,16 +320,20 @@ async def process_files(
                 if current_opts[0]["m2"]:
                     ws.cell(row=r, column=9, value=current_opts[0]["m2"])
                 success_count += 1
+            elif len(current_opts) > 1:
+                # Ambiguity: filter out special pieces and use the lowest standard price (base price of format)
+                std_candidates = [opt for opt in current_opts if not opt.get("is_especial", False)]
+                if not std_candidates:
+                    std_candidates = current_opts
+                
+                sorted_std = sorted(std_candidates, key=lambda x: x["price"])
+                chosen_opt = sorted_std[0]
+                set_price_cell(ws, r, 2, chosen_opt["price"])
+                if chosen_opt["m2"]:
+                    ws.cell(row=r, column=9, value=chosen_opt["m2"])
+                success_count += 1
             else:
-                # Multiple options in PDF or zero options, set to "PREENCHA"
                 ws.cell(row=r, column=2, value="PREENCHA")
-                if len(current_opts) > 1:
-                    ambiguous.append({
-                        "row": r,
-                        "codigo": cell_val,
-                        "nome": "NOME DESCONHECIDO (Envie imagem)",
-                        "opcoes": current_opts
-                    })
             continue
         
         tag = str(prod_info.get("tag_variante", "")).upper()
@@ -345,14 +357,19 @@ async def process_files(
                 ws.cell(row=r, column=9, value=current_opts[0]["m2"])
             success_count += 1
         else:
-            # Ambiguity or no match, set to "PREENCHA"
-            ws.cell(row=r, column=2, value="PREENCHA")
-            ambiguous.append({
-                "row": r,
-                "codigo": cell_val,
-                "nome": prod_info.get("nome_produto"),
-                "opcoes": current_opts if len(matched_opts) == 0 else matched_opts
-            })
+            # Ambiguity exists even with tags or no tags match, pick the lowest standard price (base price)
+            opts_to_use = matched_opts if matched_opts else current_opts
+            std_candidates = [opt for opt in opts_to_use if not opt.get("is_especial", False)]
+            if not std_candidates:
+                std_candidates = opts_to_use
+                
+            sorted_std = sorted(std_candidates, key=lambda x: x["price"])
+            chosen_opt = sorted_std[0]
+            
+            set_price_cell(ws, r, 2, chosen_opt["price"])
+            if chosen_opt["m2"]:
+                ws.cell(row=r, column=9, value=chosen_opt["m2"])
+            success_count += 1
 
     # ---- Add diagnostic warnings ----
     if total_codes_found == 0:
