@@ -72,10 +72,6 @@ setupDropZone(dropZoneImages, imageFilesInput, () => {
 });
 
 // --- Helpers ---
-function toggleApiHelp() {
-    const box = document.getElementById('apiHelpBox');
-    box.style.display = box.style.display === 'none' ? 'block' : 'none';
-}
 function showLoading(t, s) { loadingText.textContent = t; loadingSubtext.textContent = s || ''; loadingOverlay.style.display = 'flex'; }
 function hideLoading() { loadingOverlay.style.display = 'none'; }
 function showToast(type, msg) {

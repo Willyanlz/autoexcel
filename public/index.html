@@ -73,29 +73,10 @@
                                     <label class="field-label mt-24"><i class="fas fa-robot"></i> IA — OpenRouter</label>
                                     <div class="settings-row">
                                         <div class="setting-field">
-                                            <label>
-                                                API Key
-                                                <span class="help-icon" onclick="toggleApiHelp()" title="Como conseguir sua chave?">
-                                                    <i class="fas fa-question-circle"></i>
-                                                </span>
-                                            </label>
+                                            <label>API Key</label>
                                             <div class="input-group full-width">
                                                 <span class="input-prefix"><i class="fas fa-key"></i></span>
                                                 <input type="password" id="apiKeyInput" placeholder="sk-or-..." class="full-input">
-                                            </div>
-                                            <div id="apiHelpBox" class="api-help-box" style="display:none;">
-                                                <div class="api-help-content">
-                                                    <h4><i class="fas fa-key"></i> Como conseguir sua chave do OpenRouter</h4>
-                                                    <ol>
-                                                        <li>Acesse <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a></li>
-                                                        <li>Crie uma conta (Google ou e-mail) — leva 30 segundos</li>
-                                                        <li>Clique em <strong>"Create Key"</strong></li>
-                                                        <li>Copie a chave (começa com <code>sk-or-</code>) e cole no campo acima</li>
-                                                        <li>Deixe o modelo como <code>google/gemini-2.5-flash</code> (é o mais barato)</li>
-                                                    </ol>
-                                                    <p class="api-help-tip">💡 Você ganha <strong>US$ 1,00 grátis</strong> ao criar a conta — suficiente para centenas de imagens!</p>
-                                                    <p class="api-help-tip">🔒 Sua chave fica salva apenas no seu navegador.</p>
-                                                </div>
                                             </div>
                                         </div>
                                         <div class="setting-field">
@@ -103,6 +84,20 @@
                                             <div class="input-group full-width">
                                                 <span class="input-prefix"><i class="fas fa-brain"></i></span>
                                                 <input type="text" id="modelInput" placeholder="google/gemini-2.5-flash" class="full-input">
+                                            </div>
+                                        </div>
+                                        <div class="api-help-box">
+                                            <div class="api-help-content">
+                                                <h4><i class="fas fa-key"></i> Como conseguir sua chave do OpenRouter</h4>
+                                                <ol>
+                                                    <li>Acesse <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a></li>
+                                                    <li>Crie uma conta (Google ou e-mail) — leva 30 segundos</li>
+                                                    <li>Clique em <strong>"Create Key"</strong></li>
+                                                    <li>Copie a chave (começa com <code>sk-or-</code>) e cole no campo acima</li>
+                                                    <li>Deixe o modelo como <code>google/gemini-2.5-flash</code> (é o mais barato)</li>
+                                                </ol>
+                                                <p class="api-help-tip">💡 Você ganha <strong>US$ 1,00 grátis</strong> ao criar a conta — suficiente para centenas de imagens!</p>
+                                                <p class="api-help-tip">🔒 Sua chave fica salva apenas no seu navegador.</p>
                                             </div>
                                         </div>
                                     </div>
