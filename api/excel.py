@@ -10,6 +10,11 @@ from fastapi.responses import JSONResponse
 from api.helpers import extract_dim_from_header, set_price_cell
 
 
+def _get_code_str(item):
+    """Extrai o código em string de um item que pode ser string ou objeto {code, ...}."""
+    return item["code"] if isinstance(item, dict) else item
+
+
 def rebuild_product_rows(ws, mapping):
     """Reorganiza as linhas de código de produto conforme o mapeamento do usuário."""
     formato_rows = []
@@ -50,19 +55,19 @@ def rebuild_product_rows(ws, mapping):
 
         if not existing_code_rows:
             count = len(user_codes)
-            ws.cell(row=template_row, column=1, value=user_codes[0])
+            ws.cell(row=template_row, column=1, value=_get_code_str(user_codes[0]))
             if count > 1:
                 ws.insert_rows(template_row + 1, count - 1)
                 for j in range(i + 1, len(formato_rows)):
                     formato_rows[j] = (formato_rows[j][0] + count - 1, formato_rows[j][1])
             for idx in range(1, count):
                 r = template_row + idx
-                ws.cell(row=r, column=1, value=user_codes[idx])
+                ws.cell(row=r, column=1, value=_get_code_str(user_codes[idx]))
                 _apply_styles(ws, r, styles)
         else:
             for idx, code_row in enumerate(existing_code_rows):
                 if idx < len(user_codes):
-                    ws.cell(row=code_row, column=1, value=user_codes[idx])
+                    ws.cell(row=code_row, column=1, value=_get_code_str(user_codes[idx]))
                 else:
                     ws.cell(row=code_row, column=1, value="")
 
@@ -72,7 +77,7 @@ def rebuild_product_rows(ws, mapping):
                 ws.insert_rows(insert_at, extra)
                 for idx in range(extra):
                     r = insert_at + idx
-                    ws.cell(row=r, column=1, value=user_codes[len(existing_code_rows) + idx])
+                    ws.cell(row=r, column=1, value=_get_code_str(user_codes[len(existing_code_rows) + idx]))
                     _apply_styles(ws, r, styles)
 
 
@@ -87,11 +92,27 @@ def _apply_styles(ws, row, styles):
         if style.get("number_format"): dst.number_format = style["number_format"]
 
 
+def _find_code_data(codes_list, raw_val):
+    """Procura raw_val em codes_list (strings ou objetos) e retorna (price, extra) individuais ou (None, None)."""
+    for item in codes_list:
+        code = item["code"] if isinstance(item, dict) else item
+        if code.upper() == raw_val:
+            if isinstance(item, dict):
+                return item.get("price"), item.get("extra")
+            break
+    return None, None
+
+
 def apply_prices(ws, mapping):
-    """Percorre a planilha aplicando preços base + acréscimo nas colunas 2 e 3."""
+    """Percorre a planilha aplicando preços base + acréscimo nas colunas 2 e 3.
+    
+    Suporta preços individuais por código: se o código tiver price/extra próprio,
+    usa esse valor. Caso contrário, usa o preço global do formato.
+    """
     current_format = None
     current_price = None
     current_extra = None
+    current_codes = []
     success_count = 0
     total_codes = 0
 
@@ -102,6 +123,7 @@ def apply_prices(ws, mapping):
         if dim is not None:
             current_format = cell_val
             fmt_data = mapping.get(current_format, {})
+            current_codes = fmt_data.get("codes", [])
             p = fmt_data.get("price")
             e = fmt_data.get("extra")
             if p is not None and e is not None and str(p) != "" and str(e) != "":
@@ -122,10 +144,20 @@ def apply_prices(ws, mapping):
 
         total_codes += 1
 
-        if current_price is not None and current_extra is not None:
-            set_price_cell(ws, r, 2, current_price)
-            set_price_cell(ws, r, 3, current_price + current_extra)
-            success_count += 1
+        # Verifica se tem preço individual
+        ind_price, ind_extra = _find_code_data(current_codes, cell_val)
+        if ind_price is not None and ind_extra is not None:
+            final_price = float(ind_price)
+            final_extra = float(ind_extra)
+        elif current_price is not None and current_extra is not None:
+            final_price = current_price
+            final_extra = current_extra
+        else:
+            continue
+
+        set_price_cell(ws, r, 2, final_price)
+        set_price_cell(ws, r, 3, final_price + final_extra)
+        success_count += 1
 
     return success_count, total_codes
 

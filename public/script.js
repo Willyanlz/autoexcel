@@ -151,6 +151,21 @@ function addFormatCard(header, codes) {
     card.className = 'format-card';
     card.dataset.idx = idx;
 
+    const codesHtml = (codes || []).map(c => {
+        // c pode ser string (código puro) ou objeto {code, price, extra}
+        const codeStr = typeof c === 'object' ? c.code : c;
+        const cp = typeof c === 'object' && c.price !== undefined ? c.price : '';
+        const ce = typeof c === 'object' && c.extra !== undefined ? c.extra : '';
+        return `
+            <div class="code-item">
+                <input type="text" class="code-input" value="${codeStr}" placeholder="Código...">
+                <input type="number" step="0.01" min="0" class="code-price-input" value="${cp}" placeholder="Preço">
+                <input type="number" step="0.01" min="0" class="code-extra-input" value="${ce}" placeholder="+Frac">
+                <button type="button" class="btn-icon btn-remove" onclick="removeCode(this)" title="Remover"><i class="fas fa-trash-alt"></i></button>
+            </div>
+        `;
+    }).join('');
+
     card.innerHTML = `
         <div class="format-card-header" onclick="toggleCard(this)">
             <div class="format-title">
@@ -168,25 +183,20 @@ function addFormatCard(header, codes) {
         <div class="format-card-body">
             <div class="price-row">
                 <div class="price-field">
-                    <label>Preço Base</label>
+                    <label>Preço Base (para todos)</label>
                     <div class="input-group"><span class="input-prefix">R$</span>
                     <input type="number" step="0.01" min="0" class="price-input" value="${dPrice}" placeholder="Opcional"></div>
                 </div>
                 <div class="price-field">
-                    <label>Acréscimo Fracionado</label>
+                    <label>Acréscimo Fracionado (para todos)</label>
                     <div class="input-group"><span class="input-prefix">+ R$</span>
                     <input type="number" step="0.01" min="0" class="extra-input" value="${dExtra}" placeholder="Opcional"></div>
                 </div>
             </div>
             <div class="codes-section">
-                <label class="field-label"><i class="fas fa-barcode"></i> Códigos de Produto</label>
+                <label class="field-label"><i class="fas fa-barcode"></i> Códigos de Produto <span class="code-price-hint">(preencha Preço e +Frac por código se for diferente do formato)</span></label>
                 <div class="codes-list" id="codes-${idx}">
-                    ${(codes || []).map(c => `
-                        <div class="code-item">
-                            <input type="text" class="code-input" value="${c}" placeholder="Código...">
-                            <button type="button" class="btn-icon btn-remove" onclick="removeCode(this)" title="Remover"><i class="fas fa-trash-alt"></i></button>
-                        </div>
-                    `).join('')}
+                    ${codesHtml}
                 </div>
                 <button type="button" class="btn-add-code" onclick="addCode(${idx})">
                     <i class="fas fa-plus"></i> Adicionar Código
@@ -203,10 +213,13 @@ function addCode(idx) {
     const list = document.getElementById(`codes-${idx}`);
     const item = document.createElement('div');
     item.className = 'code-item';
-    item.innerHTML = `<input type="text" class="code-input" value="" placeholder="Código...">
+    item.innerHTML = `
+        <input type="text" class="code-input" value="" placeholder="Código...">
+        <input type="number" step="0.01" min="0" class="code-price-input" value="" placeholder="Preço">
+        <input type="number" step="0.01" min="0" class="code-extra-input" value="" placeholder="+Frac">
         <button type="button" class="btn-icon btn-remove" onclick="removeCode(this)" title="Remover"><i class="fas fa-trash-alt"></i></button>`;
     list.appendChild(item);
-    item.querySelector('input').focus();
+    item.querySelector('.code-input').focus();
 }
 
 function removeCode(btn) { btn.closest('.code-item').remove(); }
@@ -218,9 +231,7 @@ function removeFormat(btn) {
 // Add new format manually
 btnAddFormat.addEventListener('click', () => {
     addFormatCard('NOVO FORMATO', []);
-    // Scroll to bottom
     formatsContainer.lastElementChild.scrollIntoView({ behavior: 'smooth' });
-    // Focus on the header input
     const input = formatsContainer.lastElementChild.querySelector('.header-edit-input');
     input.select();
     input.focus();
@@ -237,9 +248,28 @@ btnProcess.addEventListener('click', async () => {
 
         const priceVal = card.querySelector('.price-input').value.trim();
         const extraVal = card.querySelector('.extra-input').value.trim();
-        const codeInputs = card.querySelectorAll(`#codes-${idx} .code-input`);
+        const codeItems = card.querySelectorAll(`#codes-${idx} .code-item`);
         const codes = [];
-        codeInputs.forEach(inp => { const v = inp.value.trim(); if (v) codes.push(v); });
+
+        codeItems.forEach(item => {
+            const codeInput = item.querySelector('.code-input');
+            const code = codeInput.value.trim();
+            if (!code) return;
+
+            const p = item.querySelector('.code-price-input').value.trim();
+            const e = item.querySelector('.code-extra-input').value.trim();
+
+            // Se tem preço individual, salva como objeto; se não, como string simples
+            if (p !== '' || e !== '') {
+                codes.push({
+                    code,
+                    price: p !== '' ? parseFloat(p) : null,
+                    extra: e !== '' ? parseFloat(e) : null,
+                });
+            } else {
+                codes.push(code);
+            }
+        });
 
         mapping[header] = {
             price: priceVal !== '' ? parseFloat(priceVal) : null,
