@@ -1,6 +1,4 @@
 fastapi
 python-multipart
 openpyxl
-opencv-python-headless
-rapidocr-onnxruntime
 openai

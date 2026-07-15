@@ -9,12 +9,9 @@ const imageFilesInput = document.getElementById('imageFiles');
 const excelFileName = document.getElementById('excelFileName');
 const imageFileNames = document.getElementById('imageFileNames');
 const uploadForm = document.getElementById('uploadForm');
-const ocrModeSection = document.getElementById('ocrModeSection');
 const aiSettings = document.getElementById('aiSettings');
 const apiKeyInput = document.getElementById('apiKeyInput');
 const modelInput = document.getElementById('modelInput');
-const btnModeOcr = document.getElementById('btnModeOcr');
-const btnModeAi = document.getElementById('btnModeAi');
 
 const step1 = document.getElementById('step-1');
 const step2 = document.getElementById('step-2');
@@ -29,20 +26,14 @@ const loadingSubtext = document.getElementById('loadingSubtext');
 
 let selectedExcelFile = null;
 let analysisData = null;
-let currentMode = 'ocr';
 let formatCounter = 0;
 
 // --- Init: load saved settings ---
 (function init() {
     const savedKey = localStorage.getItem('autoexcel_api_key');
     const savedModel = localStorage.getItem('autoexcel_model');
-    const savedMode = localStorage.getItem('autoexcel_mode');
     if (savedKey) apiKeyInput.value = savedKey;
     if (savedModel) modelInput.value = savedModel;
-    if (savedMode) {
-        currentMode = savedMode;
-        updateModeUI();
-    }
 })();
 
 // --- Drop Zone setup ---
@@ -72,26 +63,19 @@ setupDropZone(dropZoneImages, imageFilesInput, () => {
         imageFileNames.textContent = `${c} imagem(ns) selecionada(s)`;
         imageFileNames.style.color = 'var(--success)';
         imageFileNames.style.fontWeight = '600';
-        ocrModeSection.style.display = 'block';
+        aiSettings.style.display = 'block';
     } else {
         imageFileNames.textContent = 'Nenhuma imagem';
         imageFileNames.style.color = 'var(--text-secondary)';
-        ocrModeSection.style.display = 'none';
+        aiSettings.style.display = 'none';
     }
 });
 
-// --- Mode toggle ---
-btnModeOcr.addEventListener('click', () => { currentMode = 'ocr'; updateModeUI(); });
-btnModeAi.addEventListener('click', () => { currentMode = 'ai'; updateModeUI(); });
-
-function updateModeUI() {
-    btnModeOcr.classList.toggle('active', currentMode === 'ocr');
-    btnModeAi.classList.toggle('active', currentMode === 'ai');
-    aiSettings.style.display = currentMode === 'ai' ? 'block' : 'none';
-    localStorage.setItem('autoexcel_mode', currentMode);
-}
-
 // --- Helpers ---
+function toggleApiHelp() {
+    const box = document.getElementById('apiHelpBox');
+    box.style.display = box.style.display === 'none' ? 'block' : 'none';
+}
 function showLoading(t, s) { loadingText.textContent = t; loadingSubtext.textContent = s || ''; loadingOverlay.style.display = 'flex'; }
 function hideLoading() { loadingOverlay.style.display = 'none'; }
 function showToast(type, msg) {
@@ -125,17 +109,14 @@ uploadForm.addEventListener('submit', async (e) => {
     const hasImages = imageFilesInput.files && imageFilesInput.files.length > 0;
     if (hasImages) {
         for (let i = 0; i < imageFilesInput.files.length; i++) fd.append('images', imageFilesInput.files[i]);
-        fd.append('mode', currentMode);
-        if (currentMode === 'ai') {
-            const key = apiKeyInput.value.trim();
-            const model = modelInput.value.trim();
-            if (key) { fd.append('api_key', key); localStorage.setItem('autoexcel_api_key', key); }
-            if (model) { fd.append('llm_model', model); localStorage.setItem('autoexcel_model', model); }
-        }
+        const key = apiKeyInput.value.trim();
+        const model = modelInput.value.trim();
+        if (key) { fd.append('api_key', key); localStorage.setItem('autoexcel_api_key', key); }
+        if (model) { fd.append('llm_model', model); localStorage.setItem('autoexcel_model', model); }
     }
 
     showLoading(
-        hasImages ? (currentMode === 'ai' ? 'IA lendo imagens...' : 'OCR lendo imagens...') : 'Analisando planilha...',
+        hasImages ? 'IA lendo imagens...' : 'Analisando planilha...',
         hasImages ? 'Pode levar alguns segundos por imagem.' : 'Rápido!'
     );
 
@@ -146,8 +127,8 @@ uploadForm.addEventListener('submit', async (e) => {
         analysisData = data;
         renderStep2();
         step1.style.display = 'none'; step2.style.display = 'block';
-        if (data.ocr_count > 0) showToast('success', `Detectados ${data.ocr_count} códigos nas imagens!`);
-        if (data.ocr_errors?.length) showToast('error', data.ocr_errors[0]);
+        if (data.ai_count > 0) showToast('success', `Detectados ${data.ai_count} códigos nas imagens!`);
+        if (data.ai_errors?.length) showToast('error', data.ai_errors[0]);
     } catch (err) { showToast('error', err.message); } finally { hideLoading(); }
 });
 

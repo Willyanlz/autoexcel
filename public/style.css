@@ -177,6 +177,48 @@ button { border: none; cursor: pointer; font-family: inherit; font-weight: 600; 
 ::-webkit-scrollbar-thumb { background: var(--surface-light); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
 
+/* ── API Help Box ── */
+.help-icon {
+    cursor: pointer;
+    color: var(--primary);
+    font-size: 0.9rem;
+    margin-left: 6px;
+    transition: opacity 0.2s;
+}
+.help-icon:hover { opacity: 0.7; }
+.api-help-box {
+    margin-top: 8px;
+    background: rgba(59, 130, 246, 0.06);
+    border: 1px solid rgba(59, 130, 246, 0.15);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 0.82rem;
+    line-height: 1.6;
+}
+.api-help-content h4 {
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+    color: var(--primary);
+}
+.api-help-content ol {
+    padding-left: 20px;
+    margin-bottom: 8px;
+    color: var(--text-primary);
+}
+.api-help-content ol li { margin-bottom: 4px; }
+.api-help-content a { color: var(--primary); text-decoration: underline; }
+.api-help-content code {
+    background: var(--surface);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.8rem;
+}
+.api-help-tip {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    margin-top: 4px;
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
     .sidebar { display: none; }
